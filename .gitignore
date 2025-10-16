@@ -1,0 +1,141 @@
+# Sensitive Configuration
+config.yaml
+*.key
+*.pem
+*.crt
+secrets/
+.env
+.env.local
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/.terraform.lock.hcl
+terraform/crash.log
+terraform/override.tf
+terraform/override.tf.json
+terraform/*_override.tf
+terraform/*_override.tf.json
+
+# Ansible
+ansible/*.retry
+ansible/.vault_pass
+ansible/vault_pass.txt
+ansible/inventory/hosts.ini
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Windows Image Builder
+windows-image/iso/
+windows-image/mount/
+windows-image/output/*.wim
+windows-image/output/*.iso
+windows-image/temp/
+*.iso
+*.wim
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Backups
+*.bak
+*.backup
+backup/
+backups/
+
+# Test files
+test-output/
+.pytest_cache/
+
+# Documentation builds
+docs/_build/
+site/
+
+# Proxmox exports
+*.tar.gz
+*.tar
+*.gz
+
+# VM exports
+*.ova
+*.ovf
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules (if we add any Node.js tools)
+node_modules/
+package-lock.json
+
+# Cache
+.cache/
+*.cache
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Custom branding files (users will add their own)
+branding/wallpaper.jpg
+branding/wallpaper.png
+branding/lockscreen.jpg
+branding/lockscreen.png
+branding/logo.png
+branding/logo.jpg
+
+# Generated documentation
+docs/generated/
+
+# Monitoring data
+monitoring/data/
+
+# Downloaded game installers
+downloads/
+installers/*.exe
+installers/*.msi
+
+# LANCache data (massive)
+lancache/data/
+lancache/logs/
+
+# User profile data (in development)
+fileserver/profiles/
+fileserver/test-profiles/
