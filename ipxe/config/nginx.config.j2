@@ -1,0 +1,225 @@
+#!ipxe
+###############################################################################
+# {{ organization.name }} - PXE Boot Menu
+# High School Esports LAN Infrastructure
+# 
+# This boot menu is displayed when clients boot from the network.
+# Generated from config.yaml
+###############################################################################
+
+# Set variables
+set server-ip {{ network.ipxe_server_ip }}
+set file-server {{ network.file_server_ip }}
+set org-name {{ organization.name }}
+set org-short {{ organization.short_name }}
+
+{% set timeout_ms = (advanced.pxe.timeout_seconds | default(5)) * 1000 %}
+{% set default_option = advanced.pxe.default_boot | default('windows') %}
+
+# Clear screen and show organization info
+console --picture http://${server-ip}/images/logo.png || goto skip_logo
+:skip_logo
+
+# Print network information
+echo
+echo ================================================================================
+echo   {{ organization.name }}
+echo   Esports LAN Infrastructure
+echo ================================================================================
+echo
+echo Network Information:
+echo   IP Address:  ${ip}
+echo   MAC Address: ${mac}
+echo   Gateway:     ${gateway}
+echo   DNS Server:  ${dns}
+echo
+echo Boot Server: ${server-ip}
+echo ================================================================================
+echo
+
+# Main menu
+:start
+menu {{ organization.name }} - Boot Menu
+item --gap --             ═══════════════════════════════════════
+item --key w windows      Boot Windows 11 Esports Image (Default)
+item --key l local        Boot from Local Hard Drive
+item --gap --             ───────────────────────────────────────
+item --key i netinfo      Show Network Information
+item --key r reboot       Reboot Computer
+item --key s shell        iPXE Shell (Advanced)
+item --gap --             ═══════════════════════════════════════
+
+{% if default_option == 'windows' %}
+choose --timeout {{ timeout_ms }} --default windows selected || goto cancel
+{% elif default_option == 'local' %}
+choose --timeout {{ timeout_ms }} --default local selected || goto cancel
+{% else %}
+choose --timeout {{ timeout_ms }} --default windows selected || goto cancel
+{% endif %}
+
+goto ${selected}
+
+###############################################################################
+# Boot Windows 11 Image
+###############################################################################
+:windows
+echo
+echo ================================================================================
+echo Loading Windows 11 Esports Image...
+echo ================================================================================
+echo
+echo Please wait while the system loads. This may take 5-10 minutes on first boot.
+echo
+echo What's happening:
+echo   1. Downloading boot loader...
+echo   2. Loading Windows image from network...
+echo   3. Initializing Windows...
+echo   4. Configuring user profile...
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+
+# Set up kernel and initrd paths
+set base-url http://${server-ip}/images/windows11
+
+# Load wimboot (Windows imaging boot loader)
+echo Loading Windows boot loader...
+kernel ${base-url}/wimboot
+echo OK
+
+# Load Windows boot files
+echo Loading Windows boot files...
+initrd ${base-url}/bootmgr.exe               bootmgr.exe ||
+initrd ${base-url}/Boot/BCD                  Boot/BCD ||
+initrd ${base-url}/Boot/boot.sdi            Boot/boot.sdi ||
+
+# Load the main Windows image (WIM file)
+echo Loading Windows image (this may take a few minutes)...
+initrd ${base-url}/sources/boot.wim         sources/boot.wim ||
+
+# Boot into Windows
+echo Starting Windows...
+boot || goto failed
+
+###############################################################################
+# Boot from Local Disk
+###############################################################################
+:local
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo Booting from local hard drive...
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+sanboot --no-describe --drive 0x80 || goto failed
+
+###############################################################################
+# Show Network Information
+###############################################################################
+:netinfo
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo Network Information
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+echo Hostname:        ${hostname}
+echo IP Address:      ${ip}
+echo Subnet Mask:     ${netmask}
+echo Gateway:         ${gateway}
+echo DNS Server:      ${dns}
+echo
+echo MAC Address:     ${mac}
+echo Manufacturer:    ${manufacturer}
+echo Product:         ${product}
+echo
+echo DHCP Server:     ${dhcp-server}
+echo Boot Server:     ${server-ip}
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+echo Press any key to return to menu...
+prompt
+goto start
+
+###############################################################################
+# iPXE Shell (Advanced)
+###############################################################################
+:shell
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo iPXE Shell - Advanced Users Only
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+echo Type 'help' for available commands
+echo Type 'exit' to return to menu
+echo
+shell
+goto start
+
+###############################################################################
+# Reboot
+###############################################################################
+:reboot
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo Rebooting...
+echo ════════════════════════════════════════════════════════════════════════════════
+reboot
+
+###############################################################################
+# Error Handling
+###############################################################################
+:failed
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo ERROR: Boot failed!
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+echo Possible causes:
+echo   - Network connectivity issues
+echo   - Missing or corrupted boot files
+echo   - Insufficient memory
+echo
+echo Troubleshooting:
+echo   1. Check network cable is connected
+echo   2. Verify boot server is running
+echo   3. Contact tournament staff for assistance
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+echo Press any key to return to menu...
+prompt
+goto start
+
+###############################################################################
+# Cancelled
+###############################################################################
+:cancel
+echo
+echo Boot cancelled by user
+sleep 2
+goto start
+
+###############################################################################
+# Emergency Boot Menu (if main menu fails)
+###############################################################################
+:emergency
+echo
+echo ════════════════════════════════════════════════════════════════════════════════
+echo EMERGENCY BOOT MENU
+echo ════════════════════════════════════════════════════════════════════════════════
+echo
+echo 1. Boot from local hard drive
+echo 2. Show network information
+echo 3. Reboot
+echo
+echo Press 1, 2, or 3
+prompt --key 0x02 --timeout 30000 key && goto emergency_${key} || goto local
+
+:emergency_1
+goto local
+
+:emergency_2
+goto netinfo
+
+:emergency_3
+goto reboot
