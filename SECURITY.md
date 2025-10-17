@@ -12,7 +12,7 @@
 **DO NOT** create a public GitHub issue for security vulnerabilities.
 
 Instead:
-1. Email: security@yourorg.edu
+1. Email: security@idahoesports.gg
 2. Use GitHub Security Advisories (private)
 3. Expect response within 48 hours
 
