@@ -2,7 +2,7 @@
 
 A complete, automated infrastructure solution for deploying large-scale esports events (up to 200+ machines) with PXE boot, game caching, and roaming user profiles.
 
-(Buy Me a Coffee)[https://buymeacoffee.com/datrix838]
+[Buy Me a Coffee](https://buymeacoffee.com/datrix838)
 
 ## Overview
 
