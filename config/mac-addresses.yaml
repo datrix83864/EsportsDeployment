@@ -1,0 +1,284 @@
+# MAC Address to Custom Name Mapping
+# High School Esports LAN Infrastructure
+#
+# Assign fun, memorable names to machines for easier troubleshooting
+# Format: MAC address (lowercase, colon-separated) → custom name
+#
+# Themes provided:
+# - Star Trek (Starships)
+# - Star Wars (Ships and Characters)
+# - Lord of the Rings (Locations and Characters)
+# - Harry Potter (Locations and Characters)
+#
+# Usage:
+# 1. Get MAC addresses: nmap -sn 192.168.1.0/24 | grep "MAC Address"
+# 2. Add them below with your chosen names
+# 3. Run: ./scripts/update_machine_names.sh
+#
+
+# Custom naming configuration
+naming:
+  # Use themed names or generic?
+  use_themed_names: true
+  
+  # Default theme if MAC not found
+  default_theme: "star-trek"  # Options: star-trek, star-wars, lotr, harry-potter, generic
+  
+  # Fallback to ESPORTS-XXX if no theme names left?
+  fallback_to_generic: true
+
+# MAC Address Mappings
+# Add your actual MAC addresses here
+mac_mappings:
+  # Star Trek Starships (50 names)
+  # Format: "aa:bb:cc:dd:ee:ff": "ENTERPRISE"
+  
+  # Example entries (replace with your actual MAC addresses):
+  # "00:11:22:33:44:55": "ENTERPRISE"
+  # "00:11:22:33:44:56": "VOYAGER"
+  # "00:11:22:33:44:57": "DEFIANT"
+
+# Theme Name Pools
+# These are used when MAC addresses aren't specifically mapped
+themes:
+  star-trek:
+    prefix: "NCC"  # Starfleet registry prefix
+    names:
+      - ENTERPRISE
+      - VOYAGER
+      - DEFIANT
+      - DISCOVERY
+      - RELIANT
+      - EXCELSIOR
+      - ENTERPRISE-D
+      - ENTERPRISE-E
+      - VOYAGER
+      - PHOENIX
+      - TITAN
+      - PROMETHEUS
+      - SARATOGA
+      - LEXINGTON
+      - CONSTELLATION
+      - INTREPID
+      - MIRANDA
+      - EQUINOX
+      - THUNDERCHILD
+      - AKIRA
+      - SOVEREIGN
+      - GALAXY
+      - NEBULA
+      - AMBASSADOR
+      - EXETER
+      - FARRAGUT
+      - POTEMKIN
+      - HOOD
+      - GRISSOM
+      - PASTEUR
+      - STARGAZER
+      - SUTHERLAND
+      - BRADBURY
+      - SHENZHOU
+      - EUROPA
+      - BURAN
+      - LAKOTA
+      - MAJESTIC
+      - NOBLE
+      - RUBICON
+      - SAREK
+      - BOZEMAN
+      - BELLEROPHON
+      - CENTAUR
+      - YEAGER
+      - CURRY
+      - FREEDOM
+      - NIAGARA
+      - CHALLENGER
+      - COPERNICUS
+      - HATHAWAY
+  
+  star-wars:
+    prefix: ""
+    names:
+      - MILLENNIUM-FALCON
+      - X-WING-RED-5
+      - SLAVE-I
+      - EXECUTOR
+      - STAR-DESTROYER
+      - TIE-FIGHTER
+      - Y-WING
+      - A-WING
+      - B-WING
+      - OUTRIDER
+      - ROGUE-SHADOW
+      - EBON-HAWK
+      - GHOST
+      - RAZOR-CREST
+      - TWILIGHT
+      - TANTIVE-IV
+      - HOME-ONE
+      - PROFUNDITY
+      - RADDUS
+      - INVISIBLE-HAND
+      - MALEVOLENCE
+      - SUPREMACY
+      - FINALIZER
+      - STEADFAST
+      - NABOO-FIGHTER
+      - JEDI-STARFIGHTER
+      - ARC-170
+      - V-WING
+      - DELTA-7
+      - ETA-2
+      - SNOWSPEEDER
+      - AT-AT
+      - AT-ST
+      - IMPERIAL-SHUTTLE
+      - LAMBDA-SHUTTLE
+      - UPSILON-SHUTTLE
+      - TIE-INTERCEPTOR
+      - TIE-BOMBER
+      - TIE-DEFENDER
+      - TIE-STRIKER
+      - SCIMITAR
+      - SITH-INFILTRATOR
+      - DROID-GUNSHIP
+      - VULTURE-DROID
+      - TRI-FIGHTER
+      - HYENA-BOMBER
+      - U-WING
+      - K-WING
+      - E-WING
+  
+  lotr:
+    prefix: ""
+    names:
+      - RIVENDELL
+      - GONDOR
+      - ROHAN
+      - SHIRE
+      - MORDOR
+      - ISENGARD
+      - MINAS-TIRITH
+      - MINAS-MORGUL
+      - EDORAS
+      - HELMS-DEEP
+      - LOTHLORIEN
+      - MIRKWOOD
+      - EREBOR
+      - DALE
+      - LAKETOWN
+      - BREE
+      - WEATHERTOP
+      - CARADHRAS
+      - MORIA
+      - FANGORN
+      - ORTHANC
+      - BARAD-DUR
+      - CIRITH-UNGOL
+      - EMYN-MUIL
+      - DEAD-MARSHES
+      - ARGONATH
+      - AMON-HEN
+      - PARTH-GALEN
+      - DUNHARROW
+      - PATHS-OF-DEAD
+      - PELENNOR
+      - OSGILIATH
+      - ITHILIEN
+      - HENNETH-ANNUN
+      - GREY-HAVENS
+      - MITHLOND
+      - FORLINDON
+      - HARLINDON
+      - FORODWAITH
+      - ANGMAR
+      - ARNOR
+      - ARTHEDAIN
+      - CARDOLAN
+      - RHUDAUR
+      - EREGION
+      - ENEDWAITH
+      - DUNLAND
+      - ANDUIN
+      - GLADDEN
+      - RAUROS
+  
+  harry-potter:
+    prefix: ""
+    names:
+      - HOGWARTS
+      - GRYFFINDOR
+      - SLYTHERIN
+      - RAVENCLAW
+      - HUFFLEPUFF
+      - HOGSMEADE
+      - DIAGON-ALLEY
+      - KNOCKTURN-ALLEY
+      - GODRICS-HOLLOW
+      - LITTLE-WHINGING
+      - GRIMMAULD-PLACE
+      - BURROW
+      - SHELL-COTTAGE
+      - MALFOY-MANOR
+      - AZKABAN
+      - DURMSTRANG
+      - BEAUXBATONS
+      - FORBIDDEN-FOREST
+      - SHRIEKING-SHACK
+      - CHAMBER-SECRETS
+      - ROOM-REQUIREMENT
+      - ASTRONOMY-TOWER
+      - GREAT-HALL
+      - QUIDDITCH-PITCH
+      - BLACK-LAKE
+      - HAGRIDS-HUT
+      - GREENHOUSE-3
+      - LIBRARY
+      - OWLERY
+      - PREFECTS-BATH
+      - SORTING-HAT
+      - DUMBLEDORES-OFFICE
+      - HOSPITAL-WING
+      - POTIONS-DUNGEON
+      - DEFENSE-CLASSROOM
+      - CHARMS-CLASSROOM
+      - TRANSFIGURATION
+      - DIVINATION-TOWER
+      - CARE-CREATURES
+      - ANCIENT-RUNES
+      - ARITHMANCY
+      - MUGGLE-STUDIES
+      - MINISTRY-MAGIC
+      - GRINGOTTS
+      - ST-MUNGOS
+      - DAILY-PROPHET
+      - LEAKY-CAULDRON
+      - THREE-BROOMSTICKS
+      - HOGS-HEAD
+      - HONEYDUKES
+
+# Auto-assignment rules
+# When a new MAC is detected, assign next available name from chosen theme
+auto_assign:
+  enabled: true
+  theme: "star-trek"  # Which theme to use for auto-assignment
+  
+  # Track assigned names (automatically updated)
+  assigned_names: []
+
+# DHCP Static Reservations (optional)
+# If you want specific MACs to always get the same IP
+static_ips:
+  # "00:11:22:33:44:55": "192.168.1.101"  # ENTERPRISE always gets .101
+  # "00:11:22:33:44:56": "192.168.1.102"  # VOYAGER always gets .102
+
+# Display settings
+display:
+  # Show theme prefix in hostname?
+  show_prefix: true
+  
+  # Max hostname length (Windows limit is 15 characters)
+  max_length: 15
+  
+  # Convert to uppercase?
+  uppercase: true
