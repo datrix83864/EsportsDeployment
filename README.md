@@ -92,6 +92,26 @@ This project provides a turnkey solution for esports organizations to deploy sca
 - [Troubleshooting](docs/troubleshooting.md)
 - [Network Architecture](docs/network-architecture.md)
 
+## 🔒 Security
+
+This is a public repository containing infrastructure-as-code.
+
+**NEVER commit**:
+- config.yaml (your actual configuration)
+- SSH keys, certificates, passwords
+- Terraform state files
+- Ansible inventory with real IPs
+
+**Always use**:
+- config.example.yaml as a template
+- Ansible Vault for sensitive data
+- GitHub Secrets for CI/CD
+- Environment variables for credentials
+
+See [SECURITY.md](SECURITY.md) for full details.
+
+**Reporting Security Issues**: security@idahoesports.gg
+
 ## Project Structure
 
 ```
@@ -139,11 +159,11 @@ See [Configuration Reference](docs/configuration.md) for all options.
 ## Development Phases
 
 - [x] Phase 1: Repository structure and CI/CD foundation
-- [ ] Phase 2: iPXE boot server
-- [ ] Phase 3: LANCache server
-- [ ] Phase 4: File server and roaming profiles
-- [ ] Phase 5: Windows 11 image builder
-- [ ] Phase 6: Integration and testing
+- [x] Phase 2: iPXE boot server
+- [x] Phase 3: LANCache server
+- [x] Phase 4: File server and roaming profiles
+- [x] Phase 5: Windows 11 image builder
+- [x] Phase 6: Integration and testing
 
 ## Contributing
 
