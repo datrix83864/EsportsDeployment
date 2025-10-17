@@ -1,0 +1,173 @@
+# Nginx configuration for iPXE Boot Server
+# High School Esports LAN Infrastructure
+# Serves boot files and Windows images over HTTP
+
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+error_log /var/log/nginx/error.log;
+
+events {
+    worker_connections 2048;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    # Basic settings
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    server_tokens off;
+
+    # MIME types
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Logging
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+    
+    access_log /var/log/nginx/access.log main;
+
+    # Gzip compression
+    gzip on;
+    gzip_disable "msie6";
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # Rate limiting for boot requests (prevent abuse)
+    limit_req_zone $binary_remote_addr zone=boot:10m rate=5r/s;
+    
+    # Main server block for iPXE boot files
+    server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        
+        server_name {{ network.ipxe_server_ip }};
+        
+        # Root directory for boot files
+        root /srv/tftp;
+        
+        # Security headers
+        add_header X-Content-Type-Options nosniff;
+        add_header X-Frame-Options DENY;
+        add_header X-XSS-Protection "1; mode=block";
+        
+        # Organization info header
+        add_header X-Organization "{{ organization.name }}";
+        
+        # Boot script
+        location /boot.ipxe {
+            types { } 
+            default_type text/plain;
+            limit_req zone=boot burst=10;
+        }
+        
+        # iPXE boot files
+        location ~* \.(efi|kpxe|pxe)$ {
+            types { } 
+            default_type application/octet-stream;
+        }
+        
+        # Organization logo (optional)
+        location /images/ {
+            alias /srv/tftp/images/;
+            expires 1d;
+            add_header Cache-Control "public, immutable";
+        }
+        
+        # Health check endpoint
+        location /health {
+            access_log off;
+            return 200 "OK\n";
+            add_header Content-Type text/plain;
+        }
+        
+        # Block access to hidden files
+        location ~ /\. {
+            deny all;
+        }
+    }
+    
+    # Server block for Windows images (larger files)
+    server {
+        listen 8080;
+        listen [::]:8080;
+        
+        server_name {{ network.ipxe_server_ip }};
+        
+        # Root directory for Windows images
+        root /srv/images;
+        
+        # Increase timeout for large file downloads
+        client_max_body_size 10G;
+        client_body_timeout 300s;
+        send_timeout 300s;
+        
+        # Enable directory listing for debugging
+        autoindex on;
+        autoindex_exact_size off;
+        autoindex_localtime on;
+        
+        # Windows boot files
+        location /windows11/ {
+            alias /srv/images/windows11/;
+            
+            # Optimize for large file transfers
+            sendfile on;
+            tcp_nopush on;
+            tcp_nodelay on;
+            
+            # Cache WIM files aggressively
+            location ~* \.(wim|vhd|vhdx)$ {
+                expires 30d;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            # Don't cache BCD or boot config files
+            location ~* \.(BCD|bcd)$ {
+                expires off;
+                add_header Cache-Control "no-cache, no-store, must-revalidate";
+            }
+        }
+        
+        # Monitoring endpoint
+        location /stats {
+            stub_status on;
+            access_log off;
+            allow 127.0.0.1;
+            allow {{ network.subnet }};
+            deny all;
+        }
+        
+        # Health check
+        location /health {
+            access_log off;
+            return 200 "OK\n";
+            add_header Content-Type text/plain;
+        }
+    }
+    
+    # Performance optimizations for concurrent boots
+    # Buffer sizes
+    client_body_buffer_size 128k;
+    client_max_body_size 10G;
+    large_client_header_buffers 4 16k;
+    
+    # Timeouts
+    client_body_timeout 60s;
+    client_header_timeout 60s;
+    send_timeout 60s;
+    
+    # File caching
+    open_file_cache max=10000 inactive=30s;
+    open_file_cache_valid 60s;
+    open_file_cache_min_uses 2;
+    open_file_cache_errors on;
+}

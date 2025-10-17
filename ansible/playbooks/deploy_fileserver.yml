@@ -1,0 +1,474 @@
+---
+# Deploy File Server with Roaming Profiles
+# High School Esports LAN Infrastructure
+
+- name: Deploy File Server
+  hosts: file_server
+  become: true
+  
+  vars_files:
+    - "{{ config_file | default('../config.yaml') }}"
+  
+  tasks:
+    - name: Display deployment information
+      debug:
+        msg:
+          - "Deploying File Server"
+          - "Organization: {{ organization.name }}"
+          - "Server IP: {{ network.file_server_ip }}"
+          - "Profile Storage: {{ vms.file_server.data_disk_size | default(5000) }}GB"
+    
+    # System preparation
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [packages]
+    
+    - name: Install Samba and dependencies
+      apt:
+        name:
+          - samba
+          - samba-common
+          - samba-common-bin
+          - smbclient
+          - cifs-utils
+          - winbind
+          - libpam-winbind
+          - libnss-winbind
+          - krb5-user
+          - attr
+          - acl
+          - rsync
+        state: present
+      tags: [packages]
+    
+    # Directory structure
+    - name: Create Samba directories
+      file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+        owner: root
+        group: root
+      loop:
+        - { path: '/srv/profiles', mode: '1777' }
+        - { path: '/srv/redirected', mode: '1777' }
+        - { path: '/srv/documents', mode: '0755' }
+        - { path: '/srv/admin', mode: '0700' }
+        - { path: '/srv/backups', mode: '0755' }
+        - { path: '/srv/templates', mode: '0755' }
+        - { path: '/srv/public', mode: '1777' }
+        - { path: '/srv/netlogon', mode: '0755' }
+      tags: [directories]
+    
+    # Create user groups
+    - name: Create user groups
+      group:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - users
+        - admins
+        - players
+      tags: [users]
+    
+    # Create default profile template
+    - name: Create profile template directories
+      file:
+        path: "/srv/templates/default/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - Desktop
+        - Documents
+        - Downloads
+        - Pictures
+        - Music
+        - Videos
+      tags: [templates]
+    
+    - name: Create welcome file
+      copy:
+        dest: /srv/templates/default/Desktop/Welcome.txt
+        content: |
+          Welcome to {{ organization.name }} Esports Tournament!
+          
+          Your profile is stored on the server, which means:
+          - You can use any computer
+          - Your settings will follow you
+          - Your keybinds and configurations are saved
+          
+          Important Notes:
+          - Games are stored locally (not in your profile)
+          - Downloads go to the local G: drive
+          - Profile limit: {{ profiles.max_profile_size_mb | default(2048) }}MB
+          
+          If you have issues:
+          - Contact tournament staff
+          - We can reset your profile if needed
+          - Your game saves are backed up
+          
+          Good luck and have fun!
+        mode: '0644'
+      tags: [templates]
+    
+    # Deploy Samba configuration
+    - name: Backup existing Samba config
+      copy:
+        src: /etc/samba/smb.conf
+        dest: "/etc/samba/smb.conf.backup.{{ ansible_date_time.date }}"
+        remote_src: yes
+      ignore_errors: yes
+      tags: [config]
+    
+    - name: Deploy Samba configuration
+      template:
+        src: ../../fileserver/config/smb.conf.j2
+        dest: /etc/samba/smb.conf
+        owner: root
+        group: root
+        mode: '0644'
+        validate: 'testparm -s %s'
+      notify: restart samba
+      tags: [config]
+    
+    # Utility scripts
+    - name: Install create-user script
+      copy:
+        dest: /usr/local/bin/create-user
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          if [ $# -lt 2 ]; then
+              echo "Usage: create-user <username> <password>"
+              exit 1
+          fi
+          
+          USERNAME=$1
+          PASSWORD=$2
+          
+          # Create system user
+          useradd -m -G users,players -s /bin/bash "$USERNAME" 2>/dev/null || echo "User may already exist"
+          
+          # Set Samba password
+          (echo "$PASSWORD"; echo "$PASSWORD") | smbpasswd -a "$USERNAME" -s
+          smbpasswd -e "$USERNAME"
+          
+          # Create profile directory
+          mkdir -p /srv/profiles/"$USERNAME"
+          cp -r /srv/templates/default/* /srv/profiles/"$USERNAME"/ 2>/dev/null || true
+          chown -R "$USERNAME":users /srv/profiles/"$USERNAME"
+          chmod 700 /srv/profiles/"$USERNAME"
+          
+          echo "User $USERNAME created successfully"
+      tags: [scripts]
+    
+    - name: Install delete-user script
+      copy:
+        dest: /usr/local/bin/delete-user
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          if [ $# -lt 1 ]; then
+              echo "Usage: delete-user <username>"
+              exit 1
+          fi
+          
+          USERNAME=$1
+          
+          # Disable Samba user
+          smbpasswd -d "$USERNAME" 2>/dev/null || true
+          
+          # Archive profile
+          if [ -d /srv/profiles/"$USERNAME" ]; then
+              tar czf /srv/backups/"$USERNAME"-$(date +%Y%m%d-%H%M%S).tar.gz /srv/profiles/"$USERNAME"
+              rm -rf /srv/profiles/"$USERNAME"
+          fi
+          
+          # Delete system user
+          userdel -r "$USERNAME" 2>/dev/null || true
+          
+          echo "User $USERNAME deleted and profile archived"
+      tags: [scripts]
+    
+    - name: Install profile-sizes script
+      copy:
+        dest: /usr/local/bin/profile-sizes
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "User Profile Sizes"
+          echo "=================="
+          echo
+          
+          LIMIT_MB={{ profiles.max_profile_size_mb | default(2048) }}
+          LIMIT_BYTES=$((LIMIT_MB * 1024 * 1024))
+          
+          for dir in /srv/profiles/*; do
+              if [ -d "$dir" ]; then
+                  username=$(basename "$dir")
+                  size=$(du -sh "$dir" 2>/dev/null | cut -f1)
+                  size_bytes=$(du -sb "$dir" 2>/dev/null | cut -f1)
+                  
+                  if [ $size_bytes -gt $LIMIT_BYTES ]; then
+                      echo -e "$username: \033[0;31m$size (OVER LIMIT!)\033[0m"
+                  else
+                      echo "$username: $size"
+                  fi
+              fi
+          done
+      tags: [scripts]
+    
+    - name: Install fileserver-status script
+      copy:
+        dest: /usr/local/bin/fileserver-status
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "File Server Status"
+          echo "=================="
+          echo
+          
+          echo "Services:"
+          systemctl status smbd --no-pager | grep Active
+          systemctl status nmbd --no-pager | grep Active
+          
+          echo
+          echo "Active Connections:"
+          smbstatus -b 2>/dev/null | tail -n +4 | wc -l
+          
+          echo
+          echo "Disk Usage:"
+          df -h /srv | tail -1
+          
+          echo
+          echo "Profile Storage:"
+          du -sh /srv/profiles 2>/dev/null || echo "Calculating..."
+          
+          echo
+          echo "Top 5 Largest Profiles:"
+          du -sh /srv/profiles/* 2>/dev/null | sort -hr | head -5 || echo "No profiles yet"
+      tags: [scripts]
+    
+    - name: Install backup-profiles script
+      copy:
+        dest: /usr/local/bin/backup-profiles
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          BACKUP_DIR=/srv/backups
+          DATE=$(date +%Y%m%d)
+          
+          if [ $# -eq 0 ]; then
+              echo "Backing up all profiles..."
+              tar czf "$BACKUP_DIR/all-profiles-$DATE.tar.gz" /srv/profiles
+              echo "Backup complete: all-profiles-$DATE.tar.gz"
+          else
+              USERNAME=$1
+              if [ -d "/srv/profiles/$USERNAME" ]; then
+                  tar czf "$BACKUP_DIR/$USERNAME-$DATE.tar.gz" /srv/profiles/"$USERNAME"
+                  echo "Backup complete: $USERNAME-$DATE.tar.gz"
+              else
+                  echo "User profile not found: $USERNAME"
+                  exit 1
+              fi
+          fi
+      tags: [scripts]
+    
+    - name: Install clean-profiles script
+      copy:
+        dest: /usr/local/bin/clean-profiles
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          LIMIT_MB={{ profiles.max_profile_size_mb | default(2048) }}
+          LIMIT_BYTES=$((LIMIT_MB * 1024 * 1024))
+          
+          if [ $# -eq 0 ]; then
+              echo "Usage: clean-profiles <username> or clean-profiles --auto"
+              exit 1
+          fi
+          
+          if [ "$1" = "--auto" ]; then
+              echo "Auto-cleaning large profiles..."
+              for dir in /srv/profiles/*; do
+                  if [ -d "$dir" ]; then
+                      username=$(basename "$dir")
+                      size_bytes=$(du -sb "$dir" | cut -f1)
+                      
+                      if [ $size_bytes -gt $LIMIT_BYTES ]; then
+                          echo "Cleaning $username profile..."
+                          find "$dir" -name "*.tmp" -delete
+                          find "$dir" -name "*.log" -delete
+                          find "$dir/AppData/Local/Temp" -type f -delete 2>/dev/null || true
+                          echo "  Cleaned $username"
+                      fi
+                  fi
+              done
+          else
+              USERNAME=$1
+              DIR="/srv/profiles/$USERNAME"
+              
+              if [ ! -d "$DIR" ]; then
+                  echo "Profile not found: $USERNAME"
+                  exit 1
+              fi
+              
+              echo "Cleaning profile: $USERNAME"
+              echo "Current size: $(du -sh $DIR | cut -f1)"
+              
+              find "$DIR" -name "*.tmp" -delete
+              find "$DIR" -name "*.log" -delete
+              find "$DIR/AppData/Local/Temp" -type f -delete 2>/dev/null || true
+              
+              echo "New size: $(du -sh $DIR | cut -f1)"
+              echo "Done!"
+          fi
+      tags: [scripts]
+    
+    - name: Install bulk user creation script
+      copy:
+        dest: /usr/local/bin/create-bulk-users
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          if [ $# -lt 3 ]; then
+              echo "Usage: create-bulk-users <prefix> <count> <password>"
+              echo "Example: create-bulk-users player 200 password123"
+              exit 1
+          fi
+          
+          PREFIX=$1
+          COUNT=$2
+          PASSWORD=$3
+          
+          echo "Creating $COUNT users with prefix '$PREFIX'..."
+          
+          for i in $(seq 1 $COUNT); do
+              username=$(printf "${PREFIX}%03d" $i)
+              create-user "$username" "$PASSWORD"
+          done
+          
+          echo "Created $COUNT users"
+      tags: [scripts]
+    
+    # Firewall configuration
+    - name: Configure firewall for Samba
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+        comment: "{{ item.comment }}"
+      loop:
+        - { port: '139', proto: 'tcp', comment: 'Samba NetBIOS' }
+        - { port: '445', proto: 'tcp', comment: 'Samba SMB' }
+        - { port: '137', proto: 'udp', comment: 'Samba NetBIOS Name' }
+        - { port: '138', proto: 'udp', comment: 'Samba NetBIOS Datagram' }
+      when: ansible_facts['os_family'] == "Debian"
+      tags: [firewall]
+      ignore_errors: yes
+    
+    # Enable and start services
+    - name: Enable and start Samba services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      loop:
+        - smbd
+        - nmbd
+      tags: [services]
+    
+    # Verification
+    - name: Wait for SMB to be ready
+      wait_for:
+        port: 445
+        timeout: 30
+      tags: [verify]
+    
+    - name: Test Samba configuration
+      command: testparm -s
+      register: testparm_result
+      changed_when: false
+      tags: [verify]
+    
+    - name: Display testparm result
+      debug:
+        msg: "{{ testparm_result.stdout_lines }}"
+      tags: [verify]
+    
+    # Create deployment report
+    - name: Create deployment report
+      copy:
+        dest: /root/fileserver-deployment-report.txt
+        content: |
+          File Server Deployment Report
+          ==============================
+          Date: {{ ansible_date_time.iso8601 }}
+          Organization: {{ organization.name }}
+          Server IP: {{ network.file_server_ip }}
+          Profile Storage: {{ vms.file_server.data_disk_size | default(5000) }}GB
+          Profile Size Limit: {{ profiles.max_profile_size_mb | default(2048) }}MB
+          
+          Shares Created:
+          - \\{{ network.file_server_ip }}\profiles (Roaming Profiles)
+          - \\{{ network.file_server_ip }}\redirected (Folder Redirection)
+          - \\{{ network.file_server_ip }}\documents (Shared Documents)
+          - \\{{ network.file_server_ip }}\backups (Profile Backups)
+          
+          Next Steps:
+          1. Create user accounts: create-user <username> <password>
+          2. Bulk create: create-bulk-users player 200 password123
+          3. Test SMB access from client
+          4. Configure Windows to use roaming profiles (Phase 5)
+          
+          Management Commands:
+          - create-user <user> <pass>     : Create new user
+          - delete-user <user>             : Delete user
+          - create-bulk-users <prefix> <count> <pass> : Create multiple users
+          - profile-sizes                  : Show profile sizes
+          - fileserver-status              : Server status
+          - backup-profiles [user]         : Backup profiles
+          - clean-profiles <user|--auto>   : Clean large profiles
+          
+          Monitoring:
+          - Active connections: smbstatus
+          - Logs: tail -f /var/log/samba/log.smbd
+          - Disk usage: df -h /srv
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [report]
+    
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "=========================================="
+          - "File Server Deployed Successfully!"
+          - "=========================================="
+          - ""
+          - "Server IP: {{ network.file_server_ip }}"
+          - "Profile Storage: {{ vms.file_server.data_disk_size | default(5000) }}GB"
+          - "Profile Limit: {{ profiles.max_profile_size_mb | default(2048) }}MB"
+          - ""
+          - "Create users:"
+          - "  Single: create-user player1 password123"
+          - "  Bulk: create-bulk-users player 200 password123"
+          - ""
+          - "Test access:"
+          - "  smbclient //{{ network.file_server_ip }}/profiles -U player1"
+          - ""
+          - "From Windows client:"
+          - "  net use * \\\\{{ network.file_server_ip }}\\profiles password /user:player1"
+          - ""
+          - "Next: Phase 5 - Configure Windows image to use profiles"
+  
+  handlers:
+    - name: restart samba
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - smbd
+        - nmbd

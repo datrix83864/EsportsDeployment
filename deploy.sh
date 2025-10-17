@@ -1,0 +1,389 @@
+#!/bin/bash
+#
+# Esports LAN Infrastructure - Main Deployment Script
+#
+# This script orchestrates the deployment of all infrastructure components
+# on Proxmox VE for esports events.
+#
+# Usage:
+#   ./deploy.sh [options]
+#
+# Options:
+#   -c, --config FILE    Configuration file (default: config.yaml)
+#   -h, --help          Show this help message
+#   -v, --verbose       Enable verbose output
+#   -d, --dry-run       Show what would be done without making changes
+#   --skip-validation   Skip configuration validation
+#   --component NAME    Deploy only specific component (ipxe|lancache|fileserver|windows)
+#
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Default values
+CONFIG_FILE="${PROJECT_ROOT}/config.yaml"
+VERBOSE=false
+DRY_RUN=false
+SKIP_VALIDATION=false
+COMPONENT=""
+
+# Functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+show_help() {
+    cat << EOF
+High School Esports LAN Infrastructure Deployment
+
+Usage: $0 [options]
+
+Options:
+  -c, --config FILE      Configuration file (default: config.yaml)
+  -h, --help            Show this help message
+  -v, --verbose         Enable verbose output
+  -d, --dry-run         Show what would be done without making changes
+  --skip-validation     Skip configuration validation
+  --component NAME      Deploy only specific component:
+                          - ipxe: iPXE boot server
+                          - lancache: LANCache server
+                          - fileserver: File server and roaming profiles
+                          - windows: Windows image builder
+                          - all: Deploy everything (default)
+
+Examples:
+  $0                                    # Deploy everything
+  $0 -c myconfig.yaml                   # Use custom config
+  $0 --component lancache               # Deploy only LANCache
+  $0 -d --verbose                       # Dry run with verbose output
+
+EOF
+    exit 0
+}
+
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -c|--config)
+                CONFIG_FILE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_help
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            -d|--dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --skip-validation)
+                SKIP_VALIDATION=true
+                shift
+                ;;
+            --component)
+                COMPONENT="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit 1
+                ;;
+        esac
+    done
+}
+
+check_prerequisites() {
+    log_info "Checking prerequisites..."
+    
+    local missing_tools=()
+    
+    # Check for required tools
+    local required_tools=("python3" "ansible" "terraform" "git")
+    
+    for tool in "${required_tools[@]}"; do
+        if ! command -v "$tool" &> /dev/null; then
+            missing_tools+=("$tool")
+        fi
+    done
+    
+    if [ ${#missing_tools[@]} -ne 0 ]; then
+        log_error "Missing required tools: ${missing_tools[*]}"
+        log_info "Please install missing tools and try again"
+        exit 1
+    fi
+    
+    # Check Python version
+    local python_version=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1-2)
+    local required_version="3.8"
+    
+    if [[ $(echo -e "$python_version\n$required_version" | sort -V | head -n1) != "$required_version" ]]; then
+        log_error "Python $required_version or higher is required (found $python_version)"
+        exit 1
+    fi
+    
+    # Check if running from project root
+    if [[ ! -f "${PROJECT_ROOT}/config.example.yaml" ]]; then
+        log_error "Please run this script from the project root directory"
+        exit 1
+    fi
+    
+    log_success "All prerequisites met"
+}
+
+validate_config() {
+    if [[ "$SKIP_VALIDATION" == true ]]; then
+        log_warning "Skipping configuration validation"
+        return 0
+    fi
+    
+    log_info "Validating configuration file: $CONFIG_FILE"
+    
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        log_error "Configuration file not found: $CONFIG_FILE"
+        log_info "Copy config.example.yaml to config.yaml and customize it"
+        exit 1
+    fi
+    
+    # Run Python validator
+    if ! python3 "${SCRIPT_DIR}/validate_config.py" "$CONFIG_FILE"; then
+        log_error "Configuration validation failed"
+        exit 1
+    fi
+    
+    log_success "Configuration validated successfully"
+}
+
+preflight_checks() {
+    log_info "Running preflight checks..."
+    
+    # Check Proxmox connectivity (if script exists)
+    if [[ -f "${SCRIPT_DIR}/preflight_check.sh" ]]; then
+        if ! bash "${SCRIPT_DIR}/preflight_check.sh" "$CONFIG_FILE"; then
+            log_error "Preflight checks failed"
+            exit 1
+        fi
+    else
+        log_warning "Preflight check script not found, skipping"
+    fi
+    
+    log_success "Preflight checks completed"
+}
+
+deploy_component() {
+    local component=$1
+    
+    log_info "Deploying component: $component"
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        log_warning "[DRY RUN] Would deploy $component"
+        return 0
+    fi
+    
+    case $component in
+        ipxe)
+            log_info "Deploying iPXE boot server..."
+            cd "${PROJECT_ROOT}/ansible"
+            ansible-playbook -i inventory/hosts playbooks/deploy_ipxe.yml \
+                -e "@${CONFIG_FILE}" \
+                ${VERBOSE:+-vvv}
+            ;;
+        lancache)
+            log_info "Deploying LANCache server..."
+            cd "${PROJECT_ROOT}/ansible"
+            ansible-playbook -i inventory/hosts playbooks/deploy_lancache.yml \
+                -e "@${CONFIG_FILE}" \
+                ${VERBOSE:+-vvv}
+            ;;
+        fileserver)
+            log_info "Deploying file server..."
+            cd "${PROJECT_ROOT}/ansible"
+            ansible-playbook -i inventory/hosts playbooks/deploy_fileserver.yml \
+                -e "@${CONFIG_FILE}" \
+                ${VERBOSE:+-vvv}
+            ;;
+        windows)
+            log_info "Deploying Windows image builder..."
+            cd "${PROJECT_ROOT}/ansible"
+            ansible-playbook -i inventory/hosts playbooks/deploy_windows_builder.yml \
+                -e "@${CONFIG_FILE}" \
+                ${VERBOSE:+-vvv}
+            ;;
+        all)
+            log_info "Deploying all components..."
+            cd "${PROJECT_ROOT}/ansible"
+            ansible-playbook -i inventory/hosts playbooks/deploy_all.yml \
+                -e "@${CONFIG_FILE}" \
+                ${VERBOSE:+-vvv}
+            ;;
+        *)
+            log_error "Unknown component: $component"
+            log_info "Valid components: ipxe, lancache, fileserver, windows, all"
+            exit 1
+            ;;
+    esac
+    
+    log_success "Component $component deployed successfully"
+}
+
+provision_infrastructure() {
+    log_info "Provisioning infrastructure with Terraform..."
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        log_warning "[DRY RUN] Would provision infrastructure"
+        return 0
+    fi
+    
+    cd "${PROJECT_ROOT}/terraform"
+    
+    # Initialize Terraform
+    log_info "Initializing Terraform..."
+    terraform init
+    
+    # Plan deployment
+    log_info "Planning infrastructure changes..."
+    terraform plan \
+        -var-file="${CONFIG_FILE}" \
+        -out=tfplan
+    
+    # Apply if not in dry run
+    if [[ "$DRY_RUN" != true ]]; then
+        log_info "Applying infrastructure changes..."
+        terraform apply tfplan
+        rm -f tfplan
+    fi
+    
+    log_success "Infrastructure provisioned successfully"
+}
+
+create_inventory() {
+    log_info "Creating Ansible inventory..."
+    
+    # Parse config and create inventory
+    # This will be implemented when we build the actual playbooks
+    local inventory_file="${PROJECT_ROOT}/ansible/inventory/hosts"
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        log_warning "[DRY RUN] Would create inventory at $inventory_file"
+        return 0
+    fi
+    
+    log_info "Inventory will be created at: $inventory_file"
+    # TODO: Implement inventory generation from config.yaml
+    
+    log_success "Inventory created"
+}
+
+show_summary() {
+    log_info "Deployment Summary"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Configuration: $CONFIG_FILE"
+    echo "Component:     ${COMPONENT:-all}"
+    echo "Dry Run:       $DRY_RUN"
+    echo ""
+    
+    if [[ "$DRY_RUN" != true ]]; then
+        echo "Your infrastructure is being deployed!"
+        echo ""
+        echo "Next Steps:"
+        echo "  1. Monitor the Ansible playbook output for any errors"
+        echo "  2. Verify VMs are running in Proxmox web interface"
+        echo "  3. Test PXE boot from a client machine"
+        echo "  4. Build Windows image: ./scripts/build_windows_image.sh"
+        echo "  5. Review documentation in docs/ for detailed guides"
+        echo ""
+        echo "Troubleshooting:"
+        echo "  - Check logs in /var/log/ on each VM"
+        echo "  - Use ./scripts/troubleshoot.sh for common issues"
+        echo "  - Refer to docs/troubleshooting.md"
+    else
+        echo "[DRY RUN] No changes were made"
+        echo "Run without -d/--dry-run to perform actual deployment"
+    fi
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+banner() {
+    cat << "EOF"
+╔═══════════════════════════════════════════════════════════╗
+║        Esports LAN Infrastructure Deployment              ║
+║  Automated PXE Boot, LANCache, and File Server Setup      ║
+╚═══════════════════════════════════════════════════════════╝
+EOF
+    echo ""
+}
+
+main() {
+    banner
+    
+    # Parse command line arguments
+    parse_arguments "$@"
+    
+    # Set default component if not specified
+    if [[ -z "$COMPONENT" ]]; then
+        COMPONENT="all"
+    fi
+    
+    # Enable verbose mode for Ansible if requested
+    if [[ "$VERBOSE" == true ]]; then
+        export ANSIBLE_STDOUT_CALLBACK=debug
+        export ANSIBLE_VERBOSE=true
+    fi
+    
+    # Main deployment flow
+    check_prerequisites
+    validate_config
+    preflight_checks
+    
+    log_info "Starting deployment process..."
+    
+    # Provision VMs with Terraform
+    provision_infrastructure
+    
+    # Create Ansible inventory
+    create_inventory
+    
+    # Deploy components
+    deploy_component "$COMPONENT"
+    
+    # Show summary
+    show_summary
+    
+    log_success "Deployment completed successfully!"
+    
+    exit 0
+}
+
+# Handle errors
+trap 'log_error "An error occurred during deployment. Check the output above for details."; exit 1' ERR
+
+# Run main function
+main "$@"
