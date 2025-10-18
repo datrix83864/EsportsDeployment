@@ -64,12 +64,9 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   }
 
   # If a template was not provided, allow attaching an ISO for manual install or automated kickstart
-  dynamic "cdrom" {
-    for_each = var.ubuntu_iso != "" && var.template_name == "" ? [1] : []
-    content {
-      file = var.ubuntu_iso
-    }
-  }
+  # Attach ISO to IDE2 as a string attribute when an ISO is provided and no template is used.
+  # Format expected by the provider is like: "local:iso/ubuntu-22.04.iso,media=cdrom"
+  ide2 = var.ubuntu_iso != "" && var.template_name == "" ? "${var.ubuntu_iso},media=cdrom" : null
   
   # Cloud-init configuration
   ipconfig0 = "ip=${(length(keys(var.config)) > 0 && try(var.config.network.ipxe_server_ip, null) != null) ? var.config.network.ipxe_server_ip : var.server_ip}/${var.subnet_cidr},gw=${(length(keys(var.config)) > 0 && try(var.config.network.gateway, null) != null) ? var.config.network.gateway : var.gateway}"
