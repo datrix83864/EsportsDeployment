@@ -13,6 +13,8 @@ network:
   ipxe_server_ip: "192.168.1.10"
   lancache_server_ip: "192.168.1.11"
   file_server_ip: "192.168.1.12"
+  # Optional: management IP for Proxmox host (preferred over hostname)
+  # proxmox_ip: "192.168.1.5"
 
   # Network settings
   subnet: "192.168.1.0/24"

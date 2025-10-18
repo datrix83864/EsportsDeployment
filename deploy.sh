@@ -215,17 +215,36 @@ def build_proxmox_vars(cfg):
     # cfg is the top-level config loaded from YAML
     proxmox_cfg = cfg.get('proxmox', {}) or {}
     network_cfg = cfg.get('network', {}) or {}
-
+    # Allow proxmox IP to be provided in several places in config.yaml so
+    # users can keep management IPs with other network settings. Order of
+    # precedence (first non-empty wins): proxmox.host, network.proxmox_ip,
+    # network.proxmox_server_ip
+    host = proxmox_cfg.get('host', '') or network_cfg.get('proxmox_ip', '') or network_cfg.get('proxmox_server_ip', '')
     # Prefer explicit api_url if provided in proxmox.host; otherwise try to
-    # construct from host (may be hostname or IP) and default port 8006
-    host = proxmox_cfg.get('host', '')
+    # construct from host (may be hostname or IP) and default port 8006.
+    # If a short hostname is provided (e.g. "pve") we still construct a
+    # URL for backward compatibility but print a warning recommending an IP
+    # because name resolution may not be available on the machine running
+    # this script. If the host looks like an IPv4 address (with optional
+    # :port) we build a sensible https://<ip>:<port>/api2/json URL.
+    api_url = ""
     if host:
+        # If the host already contains a scheme, use it verbatim
         if host.startswith('http'):
             api_url = host
         else:
-            api_url = f"https://{host}:8006/api2/json"
-    else:
-        api_url = ""
+            import re
+            # Match IPv4 optionally with :port
+            m = re.match(r'^(?P<ip>\d{1,3}(?:\.\d{1,3}){3})(?::(?P<port>\d+))?$', host)
+            if m:
+                ip = m.group('ip')
+                port = m.group('port') or '8006'
+                api_url = f"https://{ip}:{port}/api2/json"
+            else:
+                # Host is a non-IP hostname. Build URL for compatibility but
+                # warn so users prefer using numeric IPs which are static.
+                api_url = f"https://{host}:8006/api2/json"
+                print(f"[WARNING] proxmox.host '{host}' looks like a hostname rather than an IP.\n  Using hostnames can fail if your machine cannot resolve that name.\n  Prefer setting proxmox.host to the management IP (e.g. 192.168.1.5) or set TF_VAR_proxmox_api_url explicitly.", file=sys.stderr)
 
     return {
         'proxmox_api_url': api_url,

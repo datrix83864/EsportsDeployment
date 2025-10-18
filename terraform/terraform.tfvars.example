@@ -3,7 +3,9 @@
 # DO NOT COMMIT terraform.tfvars TO GIT!
 
 # Proxmox Connection
-# Replace with your Proxmox host
+# Replace with your Proxmox management host. Using the numeric IP is
+# recommended because this script and Terraform may run on machines that
+# don't resolve short hostnames. Example using the Proxmox management IP:
 proxmox_api_url = "https://192.168.1.5:8006/api2/json"  # Change IP!
 
 # Authentication Method 1: Username/Password (easier)
