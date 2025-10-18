@@ -1,0 +1,86 @@
+# Terraform Variables
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT COMMIT terraform.tfvars TO GIT!
+
+# Proxmox Connection
+# Replace with your Proxmox host
+proxmox_api_url = "https://192.168.1.5:8006/api2/json"  # Change IP!
+
+# Authentication Method 1: Username/Password (easier)
+proxmox_user     = "root@pam"
+proxmox_password = "YOUR_PROXMOX_PASSWORD"  # Change this!
+
+# Authentication Method 2: API Token (more secure - see below)
+# proxmox_api_token_id     = "root@pam!terraform"
+# proxmox_api_token_secret = "your-token-secret"
+
+# TLS Settings
+proxmox_tls_insecure = true  # Set to false if you have valid SSL cert
+
+# Proxmox Node
+proxmox_node = "pve"  # Change if your node has a different name
+
+# Storage
+vm_storage  = "local-lvm"  # Change to your storage pool name
+iso_storage = "local"      # Storage where ISOs are stored
+
+# Network
+network_bridge = "vmbr0"   # Your network bridge
+# vlan_id = 100            # Uncomment if using VLANs
+subnet_cidr = 24           # /24 subnet
+
+# SSH Public Key (for accessing VMs)
+# Generate with: ssh-keygen
+# Then: cat ~/.ssh/id_rsa.pub
+ssh_public_key = <<EOF
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... your-public-key-here
+EOF
+
+# Ubuntu ISO (if not using templates)
+# Upload ISO to Proxmox first: local:iso/ubuntu-22.04.iso
+ubuntu_iso = "local:iso/ubuntu-22.04-server-amd64.iso"
+
+# VM IDs (optional - leave as 0 for auto-assignment)
+# ipxe_vm_id = 100
+# lancache_vm_id = 101
+# fileserver_vm_id = 102
+
+#==============================================================================
+# How to Create Proxmox API Token (Method 2 - Recommended for Production)
+#==============================================================================
+#
+# 1. Log into Proxmox web interface
+# 2. Go to: Datacenter → Permissions → API Tokens
+# 3. Click "Add"
+# 4. User: root@pam
+# 5. Token ID: terraform
+# 6. Privilege Separation: UNCHECKED (or token won't have permissions)
+# 7. Click "Add"
+# 8. SAVE THE SECRET! (You can't see it again)
+# 9. Use in terraform.tfvars:
+#    proxmox_api_token_id     = "root@pam!terraform"
+#    proxmox_api_token_secret = "the-secret-from-step-8"
+#
+#==============================================================================
+
+#==============================================================================
+# Troubleshooting Common Issues
+#==============================================================================
+#
+# Issue: "dial tcp: lookup proxmox.local: no such host"
+# Fix: Use IP address instead: proxmox_api_url = "https://192.168.1.5:8006/api2/json"
+#
+# Issue: "x509: certificate signed by unknown authority"
+# Fix: Set proxmox_tls_insecure = true
+#
+# Issue: "authentication failed"
+# Fix: Check username/password or API token
+#      Username format: root@pam (not just "root")
+#
+# Issue: "node 'pve' not found"
+# Fix: Check your node name in Proxmox and set proxmox_node correctly
+#
+# Issue: "storage 'local-lvm' does not exist"
+# Fix: List storage in Proxmox and use correct name
+#
+#==============================================================================
