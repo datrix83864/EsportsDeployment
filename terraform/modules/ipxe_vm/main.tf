@@ -19,7 +19,7 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   # VM specs from config (prefer var.config)
   cores   = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.cores, null) != null) ? var.config.vms.ipxe_server.cores : var.vm_cores
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.memory, null) != null) ? var.config.vms.ipxe_server.memory : var.vm_memory
-  sockets = 1
+
   
   # Use cloud-init ready template or ISO
   clone = var.template_name

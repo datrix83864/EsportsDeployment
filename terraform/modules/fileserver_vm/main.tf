@@ -16,7 +16,7 @@ resource "proxmox_vm_qemu" "file_server" {
 
   cores   = (length(keys(var.config)) > 0 && try(var.config.vms.file_server.cores, null) != null) ? var.config.vms.file_server.cores : var.vm_cores
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.file_server.memory, null) != null) ? var.config.vms.file_server.memory : var.vm_memory
-  sockets = 1
+
 
   clone = var.template_name
   full_clone = true
