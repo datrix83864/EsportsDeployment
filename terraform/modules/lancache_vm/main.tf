@@ -49,7 +49,7 @@ resource "proxmox_vm_qemu" "lancache_server" {
     content {
       slot = "ide2"
       type = "cdrom"
-      file = var.ubuntu_iso
+      iso  = var.ubuntu_iso
     }
   }
 
