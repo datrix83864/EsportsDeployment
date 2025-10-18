@@ -1,0 +1,30 @@
+name: Check script executable bits
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  check-executables:
+    runs-on: ubuntu-latest
+    name: Ensure scripts with shebang are executable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find files with shebang and verify executable bit
+        run: |
+          set -euo pipefail
+          failures=0
+          while IFS= read -r file; do
+            if [ ! -x "$file" ]; then
+              echo "File has shebang but is not executable: $file"
+              failures=$((failures+1))
+            fi
+          done < <(git grep -l "^#!" -- "**/*" || true)
+          if [ "$failures" -ne 0 ]; then
+            echo "Found $failures non-executable script(s). Please set executable bit and commit."
+            exit 1
+          else
+            echo "All script files with shebang are executable"
+          fi

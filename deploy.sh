@@ -529,8 +529,9 @@ validate_required_fields() {
     fi
 
     python3 - <<PY
-import sys, yaml, os
-cfg = yaml.safe_load(open('$CONFIG_FILE'))
+import sys, yaml, os, subprocess
+cfg_path = '$CONFIG_FILE'
+cfg = yaml.safe_load(open(cfg_path))
 errors = []
 
 # Network checks
@@ -548,29 +549,60 @@ for vm in ['ipxe_server','lancache_server','file_server']:
     if not vmcfg.get('memory'):
         errors.append(f"vms.{vm}.memory is missing or empty")
     if not vmcfg.get('disk_size') and not vmcfg.get('data_disk_size'):
-        # data_disk_size only applies to file_server; disk_size required for others
         if vm == 'file_server':
-            # allow data_disk_size instead of disk_size
             if not vmcfg.get('data_disk_size'):
                 errors.append(f"vms.{vm}.data_disk_size or disk_size is missing or empty")
         else:
             errors.append(f"vms.{vm}.disk_size is missing or empty")
 
-# SSH keys
+# SSH keys: auto-generate if missing
 ssh_key = cfg.get('ssh_public_key') or cfg.get('ssh_public_keys') or None
+ssh_priv_path = os.path.expanduser('~/.ssh/esports_deploy_key')
+ssh_pub_path = ssh_priv_path + '.pub'
 if not ssh_key:
-    # it's OK if modules use other methods but warn
-    errors.append('ssh_public_key not found in config.yaml (used to provision VMs)')
+    # If pub key file exists, load it; otherwise generate a keypair
+    if os.path.exists(ssh_pub_path):
+        with open(ssh_pub_path, 'r') as f:
+            pub = f.read().strip()
+            cfg['ssh_public_key'] = pub
+    else:
+        try:
+            print('[INFO] No ssh_public_key found in config. Generating keypair at ~/.ssh/esports_deploy_key')
+            os.makedirs(os.path.dirname(ssh_priv_path), exist_ok=True)
+            # Use ssh-keygen to generate an unencrypted key
+            subprocess.check_call(['ssh-keygen', '-t', 'rsa', '-b', '4096', '-N', '', '-f', ssh_priv_path])
+            with open(ssh_pub_path, 'r') as f:
+                pub = f.read().strip()
+            cfg['ssh_public_key'] = pub
+            # Write back to config.yaml to persist the public key (best-effort)
+            try:
+                with open(cfg_path, 'w') as f:
+                    yaml.safe_dump(cfg, f, default_flow_style=False)
+                print(f"[INFO] Injected generated ssh_public_key into {cfg_path}")
+            except Exception as e:
+                print(f"[WARNING] Could not write public key to {cfg_path}: {e}")
+        except Exception as e:
+            errors.append(f"Failed to generate SSH keypair: {e}")
 
 # Provider credentials: check environment variables for TF_VAR_ or variables in config
-env_token = os.environ.get('TF_VAR_proxmox_api_token_id') or os.environ.get('TF_VAR_proxmox_api_token_secret')
+env_id = os.environ.get('TF_VAR_proxmox_api_token_id')
+env_secret = os.environ.get('TF_VAR_proxmox_api_token_secret')
 cfg_token = None
 if isinstance(cfg, dict) and cfg.get('proxmox'):
     cfg_token = cfg['proxmox'].get('api_token_id') or cfg['proxmox'].get('api_token')
 
-if not env_token and not cfg_token:
-    # not fatal but warn
-    errors.append('Proxmox API token not found in environment (TF_VAR_proxmox_api_token_id/secret) or config.proxmox.api_token')
+if not (env_id and env_secret) and not cfg_token:
+    # Don't fail; provide actionable guidance instead
+    print('\n[WARNING] Proxmox API token not found.')
+    print('  - You can set environment variables TF_VAR_proxmox_api_token_id and TF_VAR_proxmox_api_token_secret')
+    print('  - Or add proxmox.api_token_id and proxmox.api_token to your config.yaml')
+    print('\nTo create a Proxmox API token:')
+    print('  1. In the Proxmox web UI go to Datacenter -> Permissions -> API Tokens')
+    print('  2. Create a token for a user with sufficient permissions and copy the token id and secret')
+    print('  3. Export them on your shell:')
+    print('       export TF_VAR_proxmox_api_token_id=tokenid@pve')
+    print('       export TF_VAR_proxmox_api_token_secret=tokensecret')
+    print('  4. Or add them under proxmox: in config.yaml')
 
 if errors:
     print('\n[ERROR] Required configuration validation failed:')
@@ -578,7 +610,7 @@ if errors:
         print('  -', e)
     sys.exit(2)
 else:
-    print('[SUCCESS] Required configuration fields present')
+    print('[SUCCESS] Required configuration fields present or auto-generated')
     sys.exit(0)
 PY
 

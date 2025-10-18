@@ -32,6 +32,8 @@ proxmox:
   # Proxmox host details
   host: "proxmox.local"
   node_name: "pve"  # Default Proxmox node name
+  api_token_id: ""  # Proxmox API token secret (set during deployment or use prompt)
+  api_token_secret: ""
   
   # Storage pools
   vm_storage: "local-lvm"  # Storage for VM disks
