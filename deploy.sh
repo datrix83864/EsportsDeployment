@@ -340,7 +340,7 @@ PY
     fi
 
     # Check remotely if template exists (using qm list and grep for exact name)
-    if ssh ${ssh_target} "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
+    if ssh "${ssh_target}" "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",\$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
         log_success "Cloud-init template '${template_name}' already present on ${ssh_target}"
         return 0
     fi
@@ -374,7 +374,7 @@ PY
     rm -f "$inv_file"
 
     # Re-check
-    if ssh ${ssh_target} "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
+    if ssh "${ssh_target}" "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",\$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
         log_success "Cloud-init template '${template_name}' created successfully"
     else
         log_error "Template creation attempted but '${template_name}' still not found. Please inspect Proxmox host."
