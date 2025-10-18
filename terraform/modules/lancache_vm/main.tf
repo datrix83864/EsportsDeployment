@@ -12,9 +12,8 @@ terraform {
 resource "proxmox_vm_qemu" "lancache_server" {
   name        = "lancache-server"
   target_node = var.proxmox_node
-  desc        = "LANCache Server - ${var.organization_name}"
+  description = "LANCache Server - ${var.organization_name}"
 
-  cores   = (length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.cores, null) != null) ? var.config.vms.lancache_server.cores : var.vm_cores
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.memory, null) != null) ? var.config.vms.lancache_server.memory : var.vm_memory
 
 
@@ -25,7 +24,8 @@ resource "proxmox_vm_qemu" "lancache_server" {
   bios = "seabios"
   os_type = "cloud-init"
   cpu {
-    type = "host"
+    cores = (length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.cores, null) != null) ? var.config.vms.lancache_server.cores : var.vm_cores
+    type  = "host"
   }
   agent = 1
 
@@ -36,8 +36,8 @@ resource "proxmox_vm_qemu" "lancache_server" {
   }
 
   disk {
-    slot    = 0
-    type    = "scsi"
+    slot    = "scsi0"
+    type    = "disk"
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.disk_size, null) != null) ? var.config.vms.lancache_server.disk_size : var.disk_size}G"
     cache   = "writethrough"

@@ -12,9 +12,8 @@ terraform {
 resource "proxmox_vm_qemu" "file_server" {
   name        = "file-server"
   target_node = var.proxmox_node
-  desc        = "File Server - ${var.organization_name}"
+  description = "File Server - ${var.organization_name}"
 
-  cores   = (length(keys(var.config)) > 0 && try(var.config.vms.file_server.cores, null) != null) ? var.config.vms.file_server.cores : var.vm_cores
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.file_server.memory, null) != null) ? var.config.vms.file_server.memory : var.vm_memory
 
 
@@ -25,7 +24,8 @@ resource "proxmox_vm_qemu" "file_server" {
   bios = "seabios"
   os_type = "cloud-init"
   cpu {
-    type = "host"
+    cores = (length(keys(var.config)) > 0 && try(var.config.vms.file_server.cores, null) != null) ? var.config.vms.file_server.cores : var.vm_cores
+    type  = "host"
   }
   agent = 1
 
@@ -36,8 +36,8 @@ resource "proxmox_vm_qemu" "file_server" {
   }
 
   disk {
-    slot    = 0
-    type    = "scsi"
+    slot    = "scsi0"
+    type    = "disk"
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.disk_size, null) != null) ? var.config.vms.file_server.disk_size : var.disk_size}G"
     cache   = "writethrough"
@@ -45,8 +45,8 @@ resource "proxmox_vm_qemu" "file_server" {
 
   # Additional data disk
   disk {
-    slot    = 1
-    type    = "scsi"
+    slot    = "scsi1"
+    type    = "disk"
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.data_disk_size, null) != null) ? var.config.vms.file_server.data_disk_size : var.data_disk_size}G"
     cache   = "writethrough"

@@ -14,10 +14,9 @@ terraform {
 resource "proxmox_vm_qemu" "ipxe_server" {
   name        = "ipxe-server"
   target_node = var.proxmox_node
-  desc        = "iPXE Boot Server - ${var.organization_name}"
-  
+  description = "iPXE Boot Server - ${var.organization_name}"
+
   # VM specs from config (prefer var.config)
-  cores   = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.cores, null) != null) ? var.config.vms.ipxe_server.cores : var.vm_cores
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.memory, null) != null) ? var.config.vms.ipxe_server.memory : var.vm_memory
 
   
@@ -38,7 +37,8 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   
   # CPU type (host for best performance)
   cpu {
-    type = "host"
+    cores = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.cores, null) != null) ? var.config.vms.ipxe_server.cores : var.vm_cores
+    type  = "host"
   }
   
   # Enable QEMU agent
@@ -55,8 +55,8 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   
   # Disk configuration
   disk {
-    slot    = 0
-    type    = "scsi"
+    slot    = "scsi0"
+    type    = "disk"
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
     cache   = "writethrough"
