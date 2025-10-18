@@ -42,6 +42,13 @@ proxmox:
   
   # VM Bridge
   network_bridge: "vmbr0"
+  
+  # Optional: Public URL of the Ubuntu cloud image to use when creating a cloud-init
+  # template on Proxmox. If left empty or omitted, the deployment scripts will
+  # default to the official Ubuntu Jammy cloud image URL (Ubuntu 22.04 LTS).
+  # Example:
+  #   ubuntu_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+  ubuntu_image_url: ""
 
 # Virtual Machine Resource Allocation
 vms:

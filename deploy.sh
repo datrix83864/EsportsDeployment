@@ -310,7 +310,7 @@ host = pm.get('host','')
 node = pm.get('node_name', pm.get('node','pve'))
 storage = pm.get('vm_storage', 'local-lvm')
 tpl = pm.get('template_name', '') or ''
-img = pm.get('ubuntu_image_url', 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img')
+    img = pm.get('ubuntu_image_url') or 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img'
 # detect if API token is configured (prefer API token for terraform but can't create template with it here)
 api = bool(pm.get('api_token_id') or pm.get('api_token'))
 print(' '.join([str(x) for x in [host,node,storage,tpl,img, int(api)]]))
