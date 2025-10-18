@@ -153,7 +153,7 @@ variable "proxmox_tls_insecure" {
 variable "proxmox_node" {
   description = "Default Proxmox node name"
   type        = string
-  default     = "pve"
+  default     = ""
 }
 
 variable "ubuntu_iso" {

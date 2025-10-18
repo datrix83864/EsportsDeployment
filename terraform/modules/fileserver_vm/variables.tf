@@ -3,7 +3,7 @@
 variable "proxmox_node" {
   description = "Proxmox node name"
   type        = string
-  default     = "pve"
+  default     = ""
 }
 
 variable "organization_name" {
