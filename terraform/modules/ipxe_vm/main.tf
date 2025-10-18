@@ -64,11 +64,10 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   }
 
   # If a template was not provided, allow attaching an ISO for manual install or automated kickstart
-  dynamic "ide2" {
+  dynamic "cdrom" {
     for_each = var.ubuntu_iso != "" && var.template_name == "" ? [1] : []
     content {
       file = var.ubuntu_iso
-      media = "cdrom"
     }
   }
   
