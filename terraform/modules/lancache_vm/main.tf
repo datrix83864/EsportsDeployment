@@ -17,7 +17,7 @@ resource "proxmox_vm_qemu" "lancache_server" {
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.memory, null) != null) ? var.config.vms.lancache_server.memory : var.vm_memory
 
 
-  clone = var.template_name
+  clone = var.template_name != "" ? var.template_name : null
   full_clone = true
 
   boot = "order=scsi0"
@@ -41,6 +41,14 @@ resource "proxmox_vm_qemu" "lancache_server" {
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.disk_size, null) != null) ? var.config.vms.lancache_server.disk_size : var.disk_size}G"
     cache   = "writethrough"
+  }
+
+  dynamic "ide2" {
+    for_each = var.ubuntu_iso != "" && var.template_name == "" ? [1] : []
+    content {
+      file = var.ubuntu_iso
+      media = "cdrom"
+    }
   }
 
   ipconfig0 = "ip=${(length(keys(var.config)) > 0 && try(var.config.network.lancache_server_ip, null) != null) ? var.config.network.lancache_server_ip : var.server_ip}/${var.subnet_cidr},gw=${(length(keys(var.config)) > 0 && try(var.config.network.gateway, null) != null) ? var.config.network.gateway : var.gateway}"

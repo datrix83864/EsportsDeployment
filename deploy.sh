@@ -289,6 +289,99 @@ preflight_checks() {
     log_success "Preflight checks completed"
 }
 
+ensure_cloudinit_template() {
+    # Skip in dry-run
+    if [[ "$DRY_RUN" == true ]]; then
+        log_warning "[DRY RUN] Skipping cloud-init template check/creation"
+        return 0
+    fi
+
+    log_info "Checking for Proxmox cloud-init template..."
+
+    # Read proxmox host/node/storage and optional template name from config.yaml
+    local proxmox_host proxmox_node proxmox_storage template_name image_url ssh_target use_api_token
+
+    read proxmox_host proxmox_node proxmox_storage template_name image_url use_api_token <<-PYOUT
+$(python3 - <<PY
+import sys,yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+pm = cfg.get('proxmox', {}) or {}
+host = pm.get('host','')
+node = pm.get('node_name', pm.get('node','pve'))
+storage = pm.get('vm_storage', 'local-lvm')
+tpl = pm.get('template_name', '') or ''
+img = pm.get('ubuntu_image_url', 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img')
+# detect if API token is configured (prefer API token for terraform but can't create template with it here)
+api = bool(pm.get('api_token_id') or pm.get('api_token'))
+print(' '.join([str(x) for x in [host,node,storage,tpl,img, int(api)]]))
+PY
+' "$CONFIG_FILE")
+
+    # If api token is set in config we avoid trying SSH-based creation (user likely using token-only workflow)
+    if [[ "$use_api_token" == 1 ]]; then
+        log_info "Proxmox API token detected in config; skipping SSH-based template creation. Ensure template exists or set ubuntu_iso."
+        return 0
+    fi
+
+    # Determine ssh target: allow PROXMOX_SSH_TARGET env override, otherwise default to root@host
+    if [[ -n "${PROXMOX_SSH_TARGET:-}" ]]; then
+        ssh_target="$PROXMOX_SSH_TARGET"
+    else
+        if [[ -z "$proxmox_host" ]]; then
+            log_warning "Proxmox host not set in config; cannot auto-create template. Set proxmox.host in config.yaml or set PROXMOX_SSH_TARGET env variable."
+            return 0
+        fi
+        ssh_target="root@${proxmox_host}"
+    fi
+
+    # Choose a sensible default template name if not provided
+    if [[ -z "$template_name" ]]; then
+        template_name="ubuntu-22.04-cloudinit"
+    fi
+
+    # Check remotely if template exists (using qm list and grep for exact name)
+    if ssh ${ssh_target} "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
+        log_success "Cloud-init template '${template_name}' already present on ${ssh_target}"
+        return 0
+    fi
+
+    log_warning "Template '${template_name}' not found on ${ssh_target}. Attempting to create it using helper script..."
+
+
+    if [[ ! -f "${SCRIPT_DIR}/ansible/playbooks/create_proxmox_template.yml" ]]; then
+        log_error "Ansible playbook not found: ${SCRIPT_DIR}/ansible/playbooks/create_proxmox_template.yml"
+        log_info "Create a cloud-init template manually or upload an ISO and set ubuntu_iso in terraform.tfvars"
+        return 0
+    fi
+
+    # Run Ansible playbook against the Proxmox host (use ssh_target as inventory)
+    log_info "Running Ansible playbook to create template '${template_name}' on ${ssh_target}"
+    # Build temporary inventory file
+    inv_file="/tmp/proxmox_inv_$$.ini"
+    echo "[proxmox]" > "$inv_file"
+    echo "${ssh_target}" >> "$inv_file"
+
+    ansible-playbook -i "$inv_file" "${SCRIPT_DIR}/ansible/playbooks/create_proxmox_template.yml" \
+        -e "storage=${proxmox_storage}" \
+        -e "template_name=${template_name}" \
+        -e "image_url=${image_url}" \
+        ${VERBOSE:+-vvv} || {
+        rm -f "$inv_file"
+        log_error "Ansible playbook failed to create template '${template_name}'."
+        return 1
+    }
+
+    rm -f "$inv_file"
+
+    # Re-check
+    if ssh ${ssh_target} "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
+        log_success "Cloud-init template '${template_name}' created successfully"
+    else
+        log_error "Template creation attempted but '${template_name}' still not found. Please inspect Proxmox host."
+        return 1
+    fi
+}
+
 deploy_component() {
     local component=$1
     
@@ -533,6 +626,9 @@ main() {
     convert_config_for_terraform
     
     preflight_checks
+
+    # Ensure cloud-init template exists on Proxmox (create it if missing and SSH access is available)
+    ensure_cloudinit_template
     
     log_info "Starting deployment process..."
     

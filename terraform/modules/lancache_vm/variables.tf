@@ -75,7 +75,13 @@ variable "dns_servers" {
 variable "template_name" {
   description = "Name of cloud-init template to clone"
   type        = string
-  default     = "ubuntu-22.04-cloudinit"
+  default     = ""
+}
+
+variable "ubuntu_iso" {
+  description = "Path to Ubuntu ISO on Proxmox (e.g. local:iso/ubuntu-22.04-server-amd64.iso). If set and template_name is empty, module will attach ISO for installation."
+  type        = string
+  default     = ""
 }
 
 variable "ssh_public_keys" {

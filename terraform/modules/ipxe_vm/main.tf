@@ -20,8 +20,8 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.memory, null) != null) ? var.config.vms.ipxe_server.memory : var.vm_memory
 
   
-  # Use cloud-init ready template or ISO
-  clone = var.template_name
+  # Use cloud-init ready template if provided; otherwise fall back to attaching an ISO (if provided)
+  clone = var.template_name != "" ? var.template_name : null
   
   # Full clone for production
   full_clone = true
@@ -61,6 +61,15 @@ resource "proxmox_vm_qemu" "ipxe_server" {
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
     cache   = "writethrough"
     discard = true
+  }
+
+  # If a template was not provided, allow attaching an ISO for manual install or automated kickstart
+  dynamic "ide2" {
+    for_each = var.ubuntu_iso != "" && var.template_name == "" ? [1] : []
+    content {
+      file = var.ubuntu_iso
+      media = "cdrom"
+    }
   }
   
   # Cloud-init configuration

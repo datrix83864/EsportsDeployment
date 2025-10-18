@@ -1,0 +1,70 @@
+---
+# Create a Proxmox cloud-init template from an Ubuntu cloud image
+# This playbook runs on the Proxmox host (via SSH) and performs the steps
+# similar to the helper shell script: download image, import disk, set VM, convert to template.
+
+- name: Create Proxmox cloud-init template
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    tmp_base: /var/tmp
+    memory: 2048
+    cores: 2
+
+  tasks:
+    - name: Ensure python is present (Ansible remote requirements)
+      raw: test -x "$(command -v python3)" || apt-get update && apt-get install -y python3
+      changed_when: false
+
+    - name: Fetch next available VMID
+      shell: pvesh get /cluster/nextid
+      register: nextid
+
+    - name: Set VMID fact
+      set_fact:
+        vmid: "{{ nextid.stdout | trim }}"
+
+    - name: Prepare temporary directory
+      file:
+        path: "{{ tmp_base }}/cloudimg-{{ vmid }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download cloud image
+      get_url:
+        url: "{{ image_url }}"
+        dest: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
+        mode: "0644"
+
+    - name: Create temporary VM
+      shell: |
+        qm create {{ vmid }} --name temp-import-{{ vmid }} --memory {{ memory }} --cores {{ cores }} || true
+
+    - name: Import disk into storage
+      shell: |
+        qm importdisk {{ vmid }} {{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }} {{ storage }}
+
+    - name: Attach imported disk as scsi0 and configure VM
+      shell: |
+        qm set {{ vmid }} --scsi0 {{ storage }}:vm-{{ vmid }}-disk-0
+        qm set {{ vmid }} --boot order=scsi0
+        qm set {{ vmid }} --agent 1
+
+    - name: Convert VM to template
+      shell: |
+        qm template {{ vmid }}
+
+    - name: Set template name
+      shell: |
+        qm set {{ vmid }} --name {{ template_name }} || true
+
+    - name: Cleanup temporary files
+      file:
+        path: "{{ tmp_base }}/cloudimg-{{ vmid }}"
+        state: absent
+
+    - name: Show completion message
+      debug:
+        msg: "Template {{ template_name }} created on host {{ inventory_hostname }} (VMID {{ vmid }})"

@@ -60,6 +60,7 @@ module "ipxe_vm" {
   // fallbacks are available in module variables
   organization_name  = local.org_name
   organization_short = local.org_short
+  ubuntu_iso = var.ubuntu_iso
 }
 
 module "lancache_vm" {
@@ -67,6 +68,7 @@ module "lancache_vm" {
   config = local.config
   organization_name  = local.org_name
   organization_short = local.org_short
+  ubuntu_iso = var.ubuntu_iso
 }
 
 module "fileserver_vm" {
@@ -74,6 +76,7 @@ module "fileserver_vm" {
   config = local.config
   organization_name  = local.org_name
   organization_short = local.org_short
+  ubuntu_iso = var.ubuntu_iso
 }
 
 // Outputs from modules
