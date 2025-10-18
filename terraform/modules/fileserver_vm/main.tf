@@ -43,9 +43,15 @@ resource "proxmox_vm_qemu" "file_server" {
     cache   = "writethrough"
   }
 
-  # Attach ISO to IDE2 as a string attribute when an ISO is provided and no template is used.
-  # Format expected by the provider is like: "local:iso/ubuntu-22.04.iso,media=cdrom"
-  ide2 = var.ubuntu_iso != "" && var.template_name == "" ? "${var.ubuntu_iso},media=cdrom" : null
+  # If an ISO is provided (and no template is used) attach it as a cdrom on IDE2
+  dynamic "disk" {
+    for_each = var.ubuntu_iso != "" && var.template_name == "" ? [1] : []
+    content {
+      slot = "ide2"
+      type = "cdrom"
+      file = var.ubuntu_iso
+    }
+  }
 
   # Additional data disk
   disk {
