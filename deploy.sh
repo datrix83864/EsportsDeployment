@@ -211,22 +211,55 @@ import json
 config_file = sys.argv[1]
 output_file = sys.argv[2]
 
+def build_proxmox_vars(cfg):
+    # cfg is the top-level config loaded from YAML
+    proxmox_cfg = cfg.get('proxmox', {}) or {}
+    network_cfg = cfg.get('network', {}) or {}
+
+    # Prefer explicit api_url if provided in proxmox.host; otherwise try to
+    # construct from host (may be hostname or IP) and default port 8006
+    host = proxmox_cfg.get('host', '')
+    if host:
+        if host.startswith('http'):
+            api_url = host
+        else:
+            api_url = f"https://{host}:8006/api2/json"
+    else:
+        api_url = ""
+
+    return {
+        'proxmox_api_url': api_url,
+        'proxmox_api_token_id': proxmox_cfg.get('api_token_id', ''),
+        'proxmox_api_token_secret': proxmox_cfg.get('api_token_secret', ''),
+        'proxmox_user': proxmox_cfg.get('user', proxmox_cfg.get('username', '')),
+        'proxmox_password': proxmox_cfg.get('password', ''),
+        'proxmox_tls_insecure': proxmox_cfg.get('tls_insecure', True),
+        'proxmox_node': proxmox_cfg.get('node_name', ''),
+        'proxmox_vm_storage': proxmox_cfg.get('vm_storage', proxmox_cfg.get('vm_storage', '')),
+        'proxmox_iso_storage': proxmox_cfg.get('iso_storage', proxmox_cfg.get('iso_storage', '')),
+        'network_bridge': proxmox_cfg.get('network_bridge', network_cfg.get('network_bridge', network_cfg.get('bridge', 'vmbr0'))),
+    }
+
 try:
     with open(config_file, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    # For simplicity and completeness, pass the full config as a single
-    # Terraform variable named "config". This avoids many undeclared
-    # variable warnings and lets Terraform reference the whole structure.
+        config = yaml.safe_load(f) or {}
+
+    # Build the base tfvars with the full config for module-level access
     tf_vars = { 'config': config }
+
+    # Merge provider-level proxmox variables so Terraform provider has explicit values
+    proxmox_vars = build_proxmox_vars(config)
+    # Only include non-empty keys to avoid overwriting explicit tfvars on disk
+    for k, v in proxmox_vars.items():
+        tf_vars[k] = v
 
     # Write JSON file
     with open(output_file, 'w') as f:
         json.dump(tf_vars, f, indent=2)
-    
+
     print(f"Successfully converted config to {output_file}")
     sys.exit(0)
-    
+
 except Exception as e:
     print(f"Error converting config: {e}", file=sys.stderr)
     sys.exit(1)
