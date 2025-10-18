@@ -301,8 +301,8 @@ ensure_cloudinit_template() {
     # Read proxmox host/node/storage and optional template name from config.yaml
     local proxmox_host proxmox_node proxmox_storage template_name image_url ssh_target use_api_token
 
-    read proxmox_host proxmox_node proxmox_storage template_name image_url use_api_token <<-PYOUT
-$(python3 - <<PY
+    # Get proxmox host/node/storage/template/image/api flag from config via Python
+    read proxmox_host proxmox_node proxmox_storage template_name image_url use_api_token < <(python3 - "$CONFIG_FILE" <<'PY'
 import sys,yaml
 cfg = yaml.safe_load(open(sys.argv[1])) or {}
 pm = cfg.get('proxmox', {}) or {}
@@ -315,7 +315,7 @@ img = pm.get('ubuntu_image_url', 'https://cloud-images.ubuntu.com/jammy/current/
 api = bool(pm.get('api_token_id') or pm.get('api_token'))
 print(' '.join([str(x) for x in [host,node,storage,tpl,img, int(api)]]))
 PY
-' "$CONFIG_FILE")
+)
 
     # If api token is set in config we avoid trying SSH-based creation (user likely using token-only workflow)
     if [[ "$use_api_token" == 1 ]]; then
