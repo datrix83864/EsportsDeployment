@@ -24,29 +24,32 @@ resource "proxmox_vm_qemu" "file_server" {
   boot = "order=scsi0"
   bios = "seabios"
   os_type = "cloud-init"
-  cpu = "host"
+  cpu {
+    type = "host"
+  }
   agent = 1
 
   network {
+    id     = 0
     bridge = var.network_bridge
     model  = "virtio"
   }
 
   disk {
+    slot    = 0
     type    = "scsi"
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.disk_size, null) != null) ? var.config.vms.file_server.disk_size : var.disk_size}G"
     cache   = "writethrough"
-    ssd     = 1
   }
 
   # Additional data disk
   disk {
+    slot    = 1
     type    = "scsi"
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.data_disk_size, null) != null) ? var.config.vms.file_server.data_disk_size : var.data_disk_size}G"
     cache   = "writethrough"
-    ssd     = 1
   }
 
   ipconfig0 = "ip=${(length(keys(var.config)) > 0 && try(var.config.network.file_server_ip, null) != null) ? var.config.network.file_server_ip : var.server_ip}/${var.subnet_cidr},gw=${(length(keys(var.config)) > 0 && try(var.config.network.gateway, null) != null) ? var.config.network.gateway : var.gateway}"

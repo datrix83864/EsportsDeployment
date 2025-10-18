@@ -37,13 +37,16 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   os_type = "cloud-init"
   
   # CPU type (host for best performance)
-  cpu = "host"
+  cpu {
+    type = "host"
+  }
   
   # Enable QEMU agent
   agent = 1
   
   # Network configuration
   network {
+    id        = 0
     bridge    = var.network_bridge
     model     = "virtio"
     firewall  = false
@@ -52,12 +55,12 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   
   # Disk configuration
   disk {
+    slot    = 0
     type    = "scsi"
     storage = var.storage_pool
     size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
     cache   = "writethrough"
-    ssd     = 1
-    discard = "on"
+    discard = true
   }
   
   # Cloud-init configuration
