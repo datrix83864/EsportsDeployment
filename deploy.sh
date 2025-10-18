@@ -302,7 +302,8 @@ ensure_cloudinit_template() {
     local proxmox_host proxmox_node proxmox_storage template_name image_url ssh_target use_api_token
 
     # Get proxmox host/node/storage/template/image/api flag from config via Python
-    read proxmox_host proxmox_node proxmox_storage template_name image_url use_api_token < <(python3 - "$CONFIG_FILE" <<'PY'
+    # Use a '|' delimiter so empty fields don't collapse when splitting on whitespace.
+    IFS='|' read -r proxmox_host proxmox_node proxmox_storage template_name image_url use_api_token < <(python3 - "$CONFIG_FILE" <<'PY'
 import sys,yaml
 cfg = yaml.safe_load(open(sys.argv[1])) or {}
 pm = cfg.get('proxmox', {}) or {}
@@ -313,7 +314,7 @@ tpl = pm.get('template_name', '') or ''
 img = pm.get('ubuntu_image_url') or 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img'
 # detect if API token is configured (prefer API token for terraform but can't create template with it here)
 api = bool(pm.get('api_token_id') or pm.get('api_token'))
-print(' '.join([str(x) for x in [host,node,storage,tpl,img, int(api)]]))
+print('|'.join([str(x) for x in [host,node,storage,tpl,img, int(api)]]))
 PY
 )
 
