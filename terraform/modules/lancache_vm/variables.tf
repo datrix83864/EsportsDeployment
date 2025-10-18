@@ -9,11 +9,13 @@ variable "proxmox_node" {
 variable "organization_name" {
   description = "Organization name for VM description"
   type        = string
+  default     = ""
 }
 
 variable "organization_short" {
   description = "Organization short name for tagging"
   type        = string
+  default     = ""
 }
 
 variable "vm_cores" {
@@ -49,6 +51,7 @@ variable "network_bridge" {
 variable "server_ip" {
   description = "Static IP address for lancache server"
   type        = string
+  default     = ""
 }
 
 variable "subnet_cidr" {
@@ -60,6 +63,7 @@ variable "subnet_cidr" {
 variable "gateway" {
   description = "Network gateway IP"
   type        = string
+  default     = ""
 }
 
 variable "dns_servers" {
@@ -78,18 +82,21 @@ variable "ssh_public_keys" {
   description = "SSH public keys for access"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "ssh_private_key" {
   description = "SSH private key for provisioning"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "ci_password" {
   description = "Cloud-init user password"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 // Full config object pass-through (optional)
