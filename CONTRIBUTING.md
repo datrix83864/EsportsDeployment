@@ -180,8 +180,8 @@ Key areas:
 sudo apt install git python3 python3-pip ansible shellcheck
 
 # Install Terraform
-wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
-unzip terraform_1.6.0_linux_amd64.zip
+wget https://releases.hashicorp.com/terraform/1.13.4/terraform_1.13.4_linux_amd64.zip
+unzip terraform_1.13.4_linux_amd64.zip
 sudo mv terraform /usr/local/bin/
 
 # Clone the repository
