@@ -16,9 +16,9 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   target_node = var.proxmox_node
   desc        = "iPXE Boot Server - ${var.organization_name}"
   
-  # VM specs from config
-  cores   = var.vm_cores
-  memory  = var.vm_memory
+  # VM specs from config (prefer var.config)
+  cores   = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.cores, null) != null) ? var.config.vms.ipxe_server.cores : var.vm_cores
+  memory  = (length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.memory, null) != null) ? var.config.vms.ipxe_server.memory : var.vm_memory
   sockets = 1
   
   # Use cloud-init ready template or ISO
@@ -54,23 +54,23 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   disk {
     type    = "scsi"
     storage = var.storage_pool
-    size    = "${var.disk_size}G"
+    size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
     cache   = "writethrough"
     ssd     = 1
     discard = "on"
   }
   
   # Cloud-init configuration
-  ipconfig0 = "ip=${var.server_ip}/${var.subnet_cidr},gw=${var.gateway}"
-  
-  nameserver = var.dns_servers
+  ipconfig0 = "ip=${(length(keys(var.config)) > 0 && try(var.config.network.ipxe_server_ip, null) != null) ? var.config.network.ipxe_server_ip : var.server_ip}/${var.subnet_cidr},gw=${(length(keys(var.config)) > 0 && try(var.config.network.gateway, null) != null) ? var.config.network.gateway : var.gateway}"
+
+  nameserver = (length(keys(var.config)) > 0 && try(join(" ", [var.config.network.lancache_server_ip, "8.8.8.8"]), null) != null) ? join(" ", [var.config.network.lancache_server_ip, "8.8.8.8"]) : var.dns_servers
   
   # SSH keys for access
-  sshkeys = var.ssh_public_keys
+  sshkeys = (length(keys(var.config)) > 0 && try(var.config.ssh_public_key, null) != null) ? var.config.ssh_public_key : var.ssh_public_keys
   
   # Cloud-init user
   ciuser     = "ansible"
-  cipassword = var.ci_password
+  cipassword = (length(keys(var.config)) > 0 && try(var.config.windows.admin_password_hash, null) != null) ? var.config.windows.admin_password_hash : var.ci_password
   
   # Lifecycle
   lifecycle {
@@ -81,7 +81,7 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   }
   
   # Tags for identification
-  tags = "ipxe,infrastructure,${var.organization_short}"
+  tags = "ipxe,infrastructure,${(length(keys(var.config)) > 0 && try(var.config.organization.short_name, null) != null) ? var.config.organization.short_name : var.organization_short}"
   
   # Start VM after creation
   automatic_reboot = false
@@ -91,8 +91,8 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   connection {
     type        = "ssh"
     user        = "ansible"
-    private_key = var.ssh_private_key
-    host        = var.server_ip
+    private_key = (length(keys(var.config)) > 0 && try(var.config.ssh_private_key, null) != null) ? var.config.ssh_private_key : var.ssh_private_key
+    host        = (length(keys(var.config)) > 0 && try(var.config.network.ipxe_server_ip, null) != null) ? var.config.network.ipxe_server_ip : var.server_ip
     timeout     = "5m"
   }
   

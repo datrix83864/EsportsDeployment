@@ -1,4 +1,4 @@
-# Variables for iPXE VM Terraform Module
+// Variables for LANCache VM Terraform Module
 
 variable "proxmox_node" {
   description = "Proxmox node name"
@@ -19,19 +19,19 @@ variable "organization_short" {
 variable "vm_cores" {
   description = "Number of CPU cores"
   type        = number
-  default     = 2
+  default     = 4
 }
 
 variable "vm_memory" {
   description = "RAM in MB"
   type        = number
-  default     = 2048
+  default     = 16384
 }
 
 variable "disk_size" {
   description = "Disk size in GB"
   type        = number
-  default     = 32
+  default     = 500
 }
 
 variable "storage_pool" {
@@ -47,7 +47,7 @@ variable "network_bridge" {
 }
 
 variable "server_ip" {
-  description = "Static IP address for iPXE server"
+  description = "Static IP address for lancache server"
   type        = string
 }
 

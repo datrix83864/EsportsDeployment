@@ -36,106 +36,78 @@ provider "proxmox" {
 
 # Local variables from config.yaml
 locals {
-  config = yamldecode(file("../config.yaml"))
-  
+  # Prefer var.config (passed via terraform.tfvars.json) when provided by the deploy script.
+  # Fall back to reading the config file directly for interactive use / testing.
+  config = length(keys(var.config)) > 0 ? var.config : yamldecode(file("../config.yaml"))
+
   org_name       = local.config.organization.name
   org_short      = local.config.organization.short_name
-  
+
   ipxe_ip        = local.config.network.ipxe_server_ip
   lancache_ip    = local.config.network.lancache_server_ip
   fileserver_ip  = local.config.network.file_server_ip
   gateway        = local.config.network.gateway
-  
+
   ipxe_cores     = local.config.vms.ipxe_server.cores
   ipxe_memory    = local.config.vms.ipxe_server.memory
   ipxe_disk      = local.config.vms.ipxe_server.disk_size
 }
 
-# iPXE Boot Server VM
-resource "proxmox_vm_qemu" "ipxe_server" {
-  name        = "ipxe-server"
-  target_node = var.proxmox_node
-  desc        = "${local.org_name} - iPXE Boot Server"
-  
-  # VM Resources
-  cores   = local.ipxe_cores
-  sockets = 1
-  memory  = local.ipxe_memory
-  
-  # Use cloud-init image or ISO
-  # Option 1: Clone from template (if you have one)
-  # clone = "ubuntu-22.04-template"
-  
-  # Option 2: Use ISO (slower but works without template)
-  iso = var.ubuntu_iso
-  
-  # Boot settings
-  boot = "order=scsi0;ide2;net0"
-  
-  # OS Settings
-  os_type = "cloud-init"
-  
-  # BIOS
-  bios = "seabios"
-  
-  # CPU
-  cpu = "host"
-  
-  # Enable QEMU agent
-  agent = 1
-  
-  # Network
-  network {
-    model  = "virtio"
-    bridge = var.network_bridge
-    tag    = var.vlan_id
-  }
-  
-  # Disk
-  disk {
-    type    = "scsi"
-    storage = var.vm_storage
-    size    = "${local.ipxe_disk}G"
-    cache   = "writethrough"
-    ssd     = 1
-  }
-  
-  # Cloud-init settings
-  ipconfig0 = "ip=${local.ipxe_ip}/${var.subnet_cidr},gw=${local.gateway}"
-  
-  nameserver = "${local.lancache_ip} 8.8.8.8"
-  
-  # SSH keys
-  sshkeys = var.ssh_public_key
-  
-  # Cloud-init user
-  ciuser = "ansible"
-  
-  # Lifecycle
-  lifecycle {
-    ignore_changes = [
-      network,
-      disk,
-    ]
-  }
-  
-  # Don't start automatically (we need to configure first)
-  automatic_reboot = false
-  onboot           = true
+// Module-based deployment for touchless flow
+module "ipxe_vm" {
+  source = "./modules/ipxe_vm"
+  config = local.config
+  // fallbacks are available in module variables
+  organization_name  = local.org_name
+  organization_short = local.org_short
 }
 
-# Outputs
+module "lancache_vm" {
+  source = "./modules/lancache_vm"
+  config = local.config
+  organization_name  = local.org_name
+  organization_short = local.org_short
+}
+
+module "fileserver_vm" {
+  source = "./modules/fileserver_vm"
+  config = local.config
+  organization_name  = local.org_name
+  organization_short = local.org_short
+}
+
+// Outputs from modules
 output "ipxe_server_id" {
   description = "iPXE Server VM ID"
-  value       = proxmox_vm_qemu.ipxe_server.vmid
+  value       = module.ipxe_vm.vm_id
 }
 
 output "ipxe_server_ip" {
   description = "iPXE Server IP Address"
-  value       = local.ipxe_ip
+  value       = module.ipxe_vm.vm_ip
 }
 
 output "ipxe_server_name" {
   description = "iPXE Server Name"
-  value       = proxmox_vm_qemu.ipxe_server.name
+  value       = module.ipxe_vm.vm_name
+}
+
+output "lancache_server_id" {
+  value = module.lancache_vm.vm_id
+}
+output "lancache_server_ip" {
+  value = module.lancache_vm.vm_ip
+}
+output "lancache_server_name" {
+  value = module.lancache_vm.vm_name
+}
+
+output "file_server_id" {
+  value = module.fileserver_vm.vm_id
+}
+output "file_server_ip" {
+  value = module.fileserver_vm.vm_ip
+}
+output "file_server_name" {
+  value = module.fileserver_vm.vm_name
 }

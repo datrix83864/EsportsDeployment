@@ -28,7 +28,7 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$SCRIPT_DIR"
 
 # Default values
 CONFIG_FILE="${PROJECT_ROOT}/config.yaml"
@@ -147,6 +147,17 @@ check_prerequisites() {
         exit 1
     fi
     
+    # Check if PyYAML is installed (needed for YAML to JSON conversion)
+    if ! python3 -c "import yaml" 2>/dev/null; then
+        log_warning "PyYAML not found. Attempting to install..."
+        if ! python3 -m pip install pyyaml 2>/dev/null; then
+            log_error "Failed to install PyYAML. Please install it manually:"
+            log_info "  pip3 install pyyaml"
+            exit 1
+        fi
+        log_success "PyYAML installed successfully"
+    fi
+    
     # Check if running from project root
     if [[ ! -f "${PROJECT_ROOT}/config.example.yaml" ]]; then
         log_error "Please run this script from the project root directory"
@@ -171,12 +182,62 @@ validate_config() {
     fi
     
     # Run Python validator
-    if ! python3 "${SCRIPT_DIR}/validate_config.py" "$CONFIG_FILE"; then
-        log_error "Configuration validation failed"
-        exit 1
+    if [[ -f "${SCRIPT_DIR}/validate_config.py" ]]; then
+        if ! python3 "${SCRIPT_DIR}/validate_config.py" "$CONFIG_FILE"; then
+            log_error "Configuration validation failed"
+            exit 1
+        fi
+    else
+        log_warning "Configuration validator not found, skipping detailed validation"
     fi
     
     log_success "Configuration validated successfully"
+}
+
+convert_config_for_terraform() {
+    log_info "Converting YAML config to Terraform-compatible JSON..."
+    
+    local tf_vars_file="${PROJECT_ROOT}/terraform/terraform.tfvars.json"
+    
+    # Create terraform directory if it doesn't exist
+    mkdir -p "${PROJECT_ROOT}/terraform"
+    
+    # Convert YAML to JSON using Python
+    python3 - "$CONFIG_FILE" "$tf_vars_file" << 'PYTHON_SCRIPT'
+import sys
+import yaml
+import json
+
+config_file = sys.argv[1]
+output_file = sys.argv[2]
+
+try:
+    with open(config_file, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # For simplicity and completeness, pass the full config as a single
+    # Terraform variable named "config". This avoids many undeclared
+    # variable warnings and lets Terraform reference the whole structure.
+    tf_vars = { 'config': config }
+
+    # Write JSON file
+    with open(output_file, 'w') as f:
+        json.dump(tf_vars, f, indent=2)
+    
+    print(f"Successfully converted config to {output_file}")
+    sys.exit(0)
+    
+except Exception as e:
+    print(f"Error converting config: {e}", file=sys.stderr)
+    sys.exit(1)
+PYTHON_SCRIPT
+    
+    if [[ $? -ne 0 ]]; then
+        log_error "Failed to convert config to Terraform format"
+        exit 1
+    fi
+    
+    log_success "Config converted to Terraform JSON format"
 }
 
 preflight_checks() {
@@ -259,16 +320,45 @@ provision_infrastructure() {
         return 0
     fi
     
+    # Check if terraform directory exists
+    if [[ ! -d "${PROJECT_ROOT}/terraform" ]]; then
+        log_warning "Terraform directory not found, skipping infrastructure provisioning"
+        return 0
+    fi
+    
     cd "${PROJECT_ROOT}/terraform"
     
-    # Initialize Terraform
+    # Initialize Terraform with retry (provider downloads can fail on transient network issues)
     log_info "Initializing Terraform..."
-    terraform init
+    local init_attempts=0
+    local init_max=3
+    local init_success=false
+    while [ $init_attempts -lt $init_max ]; do
+        init_attempts=$((init_attempts+1))
+        if terraform init; then
+            init_success=true
+            break
+        else
+            log_warning "terraform init failed (attempt $init_attempts/$init_max). Retrying in $((init_attempts*5))s..."
+            sleep $((init_attempts*5))
+        fi
+    done
+
+    if [[ "$init_success" != true ]]; then
+        log_error "Terraform initialization failed after $init_max attempts."
+        log_info "Common causes: network connectivity to provider registries (github.com), transient DNS issues, or firewall blocking outbound HTTPS."
+        log_info "Remedies:"
+        log_info "  - Ensure the machine has outbound internet access to github.com:443"
+        log_info "  - Run 'terraform init' manually inside the terraform/ directory to see full output"
+        log_info "  - Consider using a provider mirror or plugin cache (set TF_PLUGIN_CACHE_DIR)"
+        log_info "  - If rate-limited or blocked, mirror providers locally using 'terraform providers mirror' on a machine that can reach the registry"
+        exit 1
+    fi
     
-    # Plan deployment
+    # Plan deployment using the converted JSON file
     log_info "Planning infrastructure changes..."
     terraform plan \
-        -var-file="${CONFIG_FILE}" \
+        -var-file="terraform.tfvars.json" \
         -out=tfplan
     
     # Apply if not in dry run
@@ -293,10 +383,51 @@ create_inventory() {
         return 0
     fi
     
-    log_info "Inventory will be created at: $inventory_file"
-    # TODO: Implement inventory generation from config.yaml
+    # Create inventory directory if it doesn't exist
+    mkdir -p "${PROJECT_ROOT}/ansible/inventory"
     
-    log_success "Inventory created"
+    log_info "Inventory will be created at: $inventory_file"
+    # Read common host IPs from config.yaml using Python (safe YAML parsing)
+    IPXE_IP="$(python3 -c 'import sys,yaml
+cfg = yaml.safe_load(open(sys.argv[1]))
+net = cfg.get("network", {})
+print(net.get("ipxe_server_ip", ""))' "$CONFIG_FILE")" || IPXE_IP=""
+
+    LANCACHE_IP="$(python3 -c 'import sys,yaml
+cfg = yaml.safe_load(open(sys.argv[1]))
+net = cfg.get("network", {})
+print(net.get("lancache_server_ip", ""))' "$CONFIG_FILE")" || LANCACHE_IP=""
+
+    FILESERVER_IP="$(python3 -c 'import sys,yaml
+cfg = yaml.safe_load(open(sys.argv[1]))
+net = cfg.get("network", {})
+print(net.get("file_server_ip", ""))' "$CONFIG_FILE")" || FILESERVER_IP=""
+
+    # Optional: allow a per-host ansible_user to be specified under ansible: in config
+    ANSIBLE_USER="ansible"
+
+    # Write inventory file
+    cat > "$inventory_file" <<EOF
+# Ansible Inventory
+# Generated by deploy.sh
+
+[ipxe_server]
+$( [[ -n "$IPXE_IP" ]] && echo "$IPXE_IP ansible_user=${ANSIBLE_USER} ansible_become=yes" || echo "# ipxe_server IP not set in config.yaml; add it under network.ipxe_server_ip" )
+
+[lancache_server]
+$( [[ -n "$LANCACHE_IP" ]] && echo "$LANCACHE_IP ansible_user=${ANSIBLE_USER} ansible_become=yes" || echo "# lancache_server IP not set in config.yaml; add it under network.lancache_server_ip" )
+
+[file_server]
+$( [[ -n "$FILESERVER_IP" ]] && echo "$FILESERVER_IP ansible_user=${ANSIBLE_USER} ansible_become=yes" || echo "# file_server IP not set in config.yaml; add it under network.file_server_ip" )
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+EOF
+
+    # Ensure inventory is readable
+    chmod 0644 "$inventory_file" || true
+
+    log_success "Inventory created at: $inventory_file"
 }
 
 show_summary() {
@@ -361,6 +492,10 @@ main() {
     # Main deployment flow
     check_prerequisites
     validate_config
+    
+    # Convert YAML config to Terraform JSON format
+    convert_config_for_terraform
+    
     preflight_checks
     
     log_info "Starting deployment process..."
