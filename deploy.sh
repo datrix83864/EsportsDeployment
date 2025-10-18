@@ -493,6 +493,9 @@ main() {
     check_prerequisites
     validate_config
     
+    # Validate required config fields for automated deployment
+    validate_required_fields
+    
     # Convert YAML config to Terraform JSON format
     convert_config_for_terraform
     
@@ -515,6 +518,74 @@ main() {
     log_success "Deployment completed successfully!"
     
     exit 0
+}
+
+validate_required_fields() {
+    log_info "Validating required configuration fields..."
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        log_error "Configuration file not found: $CONFIG_FILE"
+        exit 1
+    fi
+
+    python3 - <<PY
+import sys, yaml, os
+cfg = yaml.safe_load(open('$CONFIG_FILE'))
+errors = []
+
+# Network checks
+net = cfg.get('network', {})
+for key in ['ipxe_server_ip','lancache_server_ip','file_server_ip','gateway']:
+    if not net.get(key):
+        errors.append(f"network.{key} is missing or empty in config.yaml")
+
+# VM checks
+vms = cfg.get('vms', {})
+for vm in ['ipxe_server','lancache_server','file_server']:
+    vmcfg = vms.get(vm, {})
+    if not vmcfg.get('cores'):
+        errors.append(f"vms.{vm}.cores is missing or empty")
+    if not vmcfg.get('memory'):
+        errors.append(f"vms.{vm}.memory is missing or empty")
+    if not vmcfg.get('disk_size') and not vmcfg.get('data_disk_size'):
+        # data_disk_size only applies to file_server; disk_size required for others
+        if vm == 'file_server':
+            # allow data_disk_size instead of disk_size
+            if not vmcfg.get('data_disk_size'):
+                errors.append(f"vms.{vm}.data_disk_size or disk_size is missing or empty")
+        else:
+            errors.append(f"vms.{vm}.disk_size is missing or empty")
+
+# SSH keys
+ssh_key = cfg.get('ssh_public_key') or cfg.get('ssh_public_keys') or None
+if not ssh_key:
+    # it's OK if modules use other methods but warn
+    errors.append('ssh_public_key not found in config.yaml (used to provision VMs)')
+
+# Provider credentials: check environment variables for TF_VAR_ or variables in config
+env_token = os.environ.get('TF_VAR_proxmox_api_token_id') or os.environ.get('TF_VAR_proxmox_api_token_secret')
+cfg_token = None
+if isinstance(cfg, dict) and cfg.get('proxmox'):
+    cfg_token = cfg['proxmox'].get('api_token_id') or cfg['proxmox'].get('api_token')
+
+if not env_token and not cfg_token:
+    # not fatal but warn
+    errors.append('Proxmox API token not found in environment (TF_VAR_proxmox_api_token_id/secret) or config.proxmox.api_token')
+
+if errors:
+    print('\n[ERROR] Required configuration validation failed:')
+    for e in errors:
+        print('  -', e)
+    sys.exit(2)
+else:
+    print('[SUCCESS] Required configuration fields present')
+    sys.exit(0)
+PY
+
+    if [[ $? -ne 0 ]]; then
+        log_error "Required configuration validation failed. See messages above."
+        exit 1
+    fi
 }
 
 # Handle errors
