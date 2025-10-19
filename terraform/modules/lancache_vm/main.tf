@@ -11,7 +11,7 @@ terraform {
 
 resource "proxmox_vm_qemu" "lancache_server" {
   name        = "lancache-server"
-  target_node = var.proxmox_node
+  target_node = (length(keys(var.config)) > 0 && try(var.config.proxmox.node_name, "") != "") ? var.config.proxmox.node_name : var.proxmox_node
   description = "LANCache Server - ${var.organization_name}"
 
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.memory, null) != null) ? var.config.vms.lancache_server.memory : var.vm_memory

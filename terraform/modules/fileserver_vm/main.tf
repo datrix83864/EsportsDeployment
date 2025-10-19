@@ -11,7 +11,7 @@ terraform {
 
 resource "proxmox_vm_qemu" "file_server" {
   name        = "file-server"
-  target_node = var.proxmox_node
+  target_node = (length(keys(var.config)) > 0 && try(var.config.proxmox.node_name, "") != "") ? var.config.proxmox.node_name : var.proxmox_node
   description = "File Server - ${var.organization_name}"
 
   memory  = (length(keys(var.config)) > 0 && try(var.config.vms.file_server.memory, null) != null) ? var.config.vms.file_server.memory : var.vm_memory

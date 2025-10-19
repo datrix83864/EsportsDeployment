@@ -13,7 +13,7 @@ terraform {
 # iPXE Boot Server VM
 resource "proxmox_vm_qemu" "ipxe_server" {
   name        = "ipxe-server"
-  target_node = var.proxmox_node
+  target_node = (length(keys(var.config)) > 0 && try(var.config.proxmox.node_name, "") != "") ? var.config.proxmox.node_name : var.proxmox_node
   description = "iPXE Boot Server - ${var.organization_name}"
 
   # VM specs from config (prefer var.config)

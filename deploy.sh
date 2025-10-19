@@ -288,6 +288,21 @@ PYTHON_SCRIPT
         log_error "Failed to convert config to Terraform format"
         exit 1
     fi
+
+    # Quick sanity check: ensure proxmox_node is set in the generated tfvars JSON
+    if python3 -c "import json
+try:
+    d=json.load(open('terraform/terraform.tfvars.json'))
+    pn=d.get('proxmox_node','')
+    if not pn:
+        raise SystemExit(2)
+except SystemExit:
+    print('[ERROR] proxmox_node is empty in terraform/terraform.tfvars.json.\n  Please set proxmox.node_name in config.yaml or set TF_VAR_proxmox_node before running deploy.sh', file=sys.stderr)
+    exit(1)
+"; then
+        log_error "proxmox_node is not set in terraform/terraform.tfvars.json"
+        exit 1
+    fi
     
     log_success "Config converted to Terraform JSON format"
 }
