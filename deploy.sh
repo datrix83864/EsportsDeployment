@@ -253,7 +253,7 @@ def build_proxmox_vars(cfg):
         'proxmox_user': proxmox_cfg.get('user', proxmox_cfg.get('username', '')),
         'proxmox_password': proxmox_cfg.get('password', ''),
         'proxmox_tls_insecure': proxmox_cfg.get('tls_insecure', True),
-        'proxmox_node': proxmox_cfg.get('node_name', ''),
+        'proxmox_node': proxmox_cfg.get('node_name', proxmox_cfg.get('node', '')),
         'proxmox_vm_storage': proxmox_cfg.get('vm_storage', proxmox_cfg.get('vm_storage', '')),
         'proxmox_iso_storage': proxmox_cfg.get('iso_storage', proxmox_cfg.get('iso_storage', '')),
         'network_bridge': proxmox_cfg.get('network_bridge', network_cfg.get('network_bridge', network_cfg.get('bridge', 'vmbr0'))),
@@ -297,7 +297,7 @@ try:
     if not pn:
         raise SystemExit(2)
 except SystemExit:
-    print('[ERROR] proxmox_node is empty in terraform/terraform.tfvars.json.\n  Please set proxmox.node_name in config.yaml or set TF_VAR_proxmox_node before running deploy.sh', file=sys.stderr)
+    print('[ERROR] proxmox_node is empty in terraform/terraform.tfvars.json.\n  Please set proxmox.node_name (or proxmox.node) in config.yaml or set TF_VAR_proxmox_node before running deploy.sh', file=sys.stderr)
     exit(1)
 "; then
         log_error "proxmox_node is not set in terraform/terraform.tfvars.json"
