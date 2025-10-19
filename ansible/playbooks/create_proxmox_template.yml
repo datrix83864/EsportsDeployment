@@ -40,33 +40,58 @@
     - name: Display download message
       debug:
         msg: |
-          Downloading Ubuntu cloud image from {{ image_url }}
-          This is a ~700MB file and may take 5-10 minutes depending on your connection.
-          Timeout is set to 10 minutes with 3 retry attempts.
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  DOWNLOADING UBUNTU CLOUD IMAGE                                ║
+          ╠════════════════════════════════════════════════════════════════╣
+          ║  Source: {{ image_url }}
+          ║  Size: ~700MB                                                  ║
+          ║  Expected Time: 1-10 minutes (depending on connection)        ║
+          ║  Timeout: 10 minutes with 3 retry attempts                    ║
+          ║                                                                ║
+          ║  ⏳ Please wait... Download progress will be shown below      ║
+          ╚════════════════════════════════════════════════════════════════╝
       when: not image_file.stat.exists
 
-    - name: Download cloud image (this may take several minutes for ~700MB file)
-      get_url:
-        url: "{{ image_url }}"
-        dest: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
-        mode: "0644"
-        timeout: 600 # 10 minutes timeout for large file download
-        force: false # Don't re-download if file exists
-      when: not image_file.stat.exists
-      register: download_result
-      retries: 3 # Retry up to 3 times on failure
-      delay: 10 # Wait 10 seconds between retries
-      until: download_result is succeeded
-      ignore_errors: true
-
-    - name: Fallback to wget if get_url fails
+    - name: Download cloud image with progress monitoring
       shell: |
         cd {{ tmp_base }}/cloudimg-{{ vmid }}
-        wget -q --show-progress -O "{{ image_url | basename }}" "{{ image_url }}"
+
+        # Download with wget showing progress bar
+        echo "⬇️  Starting download..."
+        wget --progress=bar:force:noscroll \
+             --tries=3 \
+             --timeout=600 \
+             -O "{{ image_url | basename }}" \
+             "{{ image_url }}" 2>&1 | \
+        while IFS= read -r line; do
+          # Show progress with spinning indicator
+          if [[ "$line" =~ [0-9]+% ]]; then
+            echo "$line"
+          fi
+        done
+
+        # Check if download succeeded
+        if [ -f "{{ image_url | basename }}" ]; then
+          echo "✓ Download completed successfully"
+          exit 0
+        else
+          echo "✗ Download failed"
+          exit 1
+        fi
+      args:
+        creates: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
+      when: not image_file.stat.exists
+      register: download_result
+      retries: 2 # Will retry twice if it fails (3 total attempts)
+      delay: 15
+      until: download_result.rc == 0
+
+    - name: Show download result
+      debug:
+        msg: "✓ Cloud image downloaded successfully ({{ (image_size.stat.size / 1024 / 1024) | int }}MB)"
       when:
+        - download_result is succeeded
         - not image_file.stat.exists
-        - download_result is failed
-      register: wget_result
 
     - name: Download SHA256SUMS for verification
       get_url:
