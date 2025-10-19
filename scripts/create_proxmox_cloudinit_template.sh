@@ -44,11 +44,67 @@ mkdir -p "${TMPDIR}"
 cd "${TMPDIR}"
 
 IMAGE_FILE=$(basename "${IMAGE_URL}")
+CHECKSUM_FILE="${IMAGE_FILE}.sha256"
+
+# Download image if not present
 if [[ ! -f "${IMAGE_FILE}" ]]; then
   echo "Downloading ${IMAGE_URL} to ${TMPDIR}/${IMAGE_FILE}..."
-  wget -q --show-progress -O "${IMAGE_FILE}" "${IMAGE_URL}"
+  if ! wget -q --show-progress -O "${IMAGE_FILE}" "${IMAGE_URL}"; then
+    echo "ERROR: Failed to download cloud image from ${IMAGE_URL}"
+    exit 1
+  fi
 else
   echo "Image already present: ${IMAGE_FILE}"
+fi
+
+# Download and verify checksum if available
+CHECKSUM_URL="${IMAGE_URL%/*}/SHA256SUMS"
+echo "Attempting to download checksums from ${CHECKSUM_URL}..."
+if wget -q -O "${CHECKSUM_FILE}.tmp" "${CHECKSUM_URL}" 2>/dev/null; then
+  # Extract checksum for our specific file
+  EXPECTED_CHECKSUM=$(grep "$(basename ${IMAGE_FILE})" "${CHECKSUM_FILE}.tmp" | awk '{print $1}')
+  if [[ -n "${EXPECTED_CHECKSUM}" ]]; then
+    echo "Verifying image integrity..."
+    ACTUAL_CHECKSUM=$(sha256sum "${IMAGE_FILE}" | awk '{print $1}')
+    if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
+      echo "ERROR: Checksum mismatch! Image may be corrupted."
+      echo "  Expected: ${EXPECTED_CHECKSUM}"
+      echo "  Got:      ${ACTUAL_CHECKSUM}"
+      echo "Removing corrupted file and retrying download..."
+      rm -f "${IMAGE_FILE}"
+      if ! wget -q --show-progress -O "${IMAGE_FILE}" "${IMAGE_URL}"; then
+        echo "ERROR: Failed to re-download cloud image"
+        exit 1
+      fi
+      # Re-verify
+      ACTUAL_CHECKSUM=$(sha256sum "${IMAGE_FILE}" | awk '{print $1}')
+      if [[ "${ACTUAL_CHECKSUM}" != "${EXPECTED_CHECKSUM}" ]]; then
+        echo "ERROR: Checksum still incorrect after re-download. Image source may be corrupted."
+        exit 1
+      fi
+    fi
+    echo "✓ Image checksum verified successfully"
+  else
+    echo "WARNING: Could not find checksum for ${IMAGE_FILE} in SHA256SUMS file"
+  fi
+  rm -f "${CHECKSUM_FILE}.tmp"
+else
+  echo "WARNING: Could not download checksums. Skipping verification."
+fi
+
+# Basic file validation - check if it's a valid image format
+echo "Validating image file format..."
+FILE_TYPE=$(file "${IMAGE_FILE}" 2>/dev/null || echo "unknown")
+if [[ "${FILE_TYPE}" != *"QCOW"* ]] && [[ "${FILE_TYPE}" != *"disk image"* ]] && [[ "${FILE_TYPE}" != *"boot sector"* ]]; then
+  echo "WARNING: File may not be a valid disk image. Type detected: ${FILE_TYPE}"
+  echo "Proceeding anyway, but this may cause boot issues..."
+fi
+
+# Check file size - cloud images should typically be > 200MB
+FILE_SIZE=$(stat -c%s "${IMAGE_FILE}" 2>/dev/null || stat -f%z "${IMAGE_FILE}" 2>/dev/null || echo "0")
+if [[ "${FILE_SIZE}" -lt 209715200 ]]; then
+  echo "WARNING: Image file seems too small ($(numfmt --to=iec-i --suffix=B ${FILE_SIZE} 2>/dev/null || echo ${FILE_SIZE} bytes))"
+  echo "This may indicate an incomplete download or corrupted file."
 fi
 
 echo "Creating temporary VM ${VMID}..."

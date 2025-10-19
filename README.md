@@ -92,6 +92,7 @@ This project provides a turnkey solution for esports organizations to deploy sca
 - [File Server Setup](docs/file-server.md)
 - [Windows Image Creation](docs/windows-image.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Troubleshooting Boot Issues](docs/troubleshooting-boot-issues.md) ⭐ **Common boot loop fixes**
 - [Network Architecture](docs/network-architecture.md)
 
 ## 🔒 Security
@@ -570,13 +571,13 @@ File: `kiosk/gaming-launcher.ps1` (PowerShell + WPF)
 
 ## 🎯 Implementation Status
 
-| Feature | Status | Complexity | Time to Deploy |
-|---------|--------|------------|----------------|
-| Custom Machine Names | ✅ Complete | Easy | 30 min |
-| Remote Management | ✅ Complete | Medium | 1 hour |
-| Self-Service Registration | ✅ Complete | Medium | 1 hour |
-| Custom Wallpapers | ✅ Complete | Easy | 15 min |
-| Gaming Kiosk Shell | ✅ Complete | Advanced | 2-3 hours |
+| Feature                   | Status     | Complexity | Time to Deploy |
+| ------------------------- | ---------- | ---------- | -------------- |
+| Custom Machine Names      | ✅ Complete | Easy       | 30 min         |
+| Remote Management         | ✅ Complete | Medium     | 1 hour         |
+| Self-Service Registration | ✅ Complete | Medium     | 1 hour         |
+| Custom Wallpapers         | ✅ Complete | Easy       | 15 min         |
+| Gaming Kiosk Shell        | ✅ Complete | Advanced   | 2-3 hours      |
 
 ## 📦 Installation Guide
 

@@ -401,7 +401,28 @@ PY
     # Check remotely if template exists (using qm list and grep for exact name)
     if ssh "${ssh_target}" "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",\$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
         log_success "Cloud-init template '${template_name}' already present on ${ssh_target}"
-        return 0
+        
+        # Validate the template is actually bootable
+        log_info "Validating template configuration..."
+        TEMPLATE_VMID=$(ssh "${ssh_target}" "qm list 2>/dev/null | grep -F \"${template_name}\" | awk '{print \$1}'")
+        
+        if [[ -n "${TEMPLATE_VMID}" ]]; then
+            # Check if template has a valid boot disk
+            BOOT_DISK=$(ssh "${ssh_target}" "qm config ${TEMPLATE_VMID} 2>/dev/null | grep -E '^(scsi0|ide0|sata0):' | head -1" || echo "")
+            
+            if [[ -z "${BOOT_DISK}" ]]; then
+                log_error "Template '${template_name}' exists but has NO BOOT DISK configured!"
+                log_error "This will cause VMs to fail to boot (infinite boot loop)."
+                log_info "Removing invalid template and recreating..."
+                ssh "${ssh_target}" "qm destroy ${TEMPLATE_VMID} --purge || true"
+            else
+                log_success "Template validated: Boot disk present (${BOOT_DISK})"
+                return 0
+            fi
+        else
+            log_warning "Could not determine template VMID for validation"
+            return 0
+        fi
     fi
 
     log_warning "Template '${template_name}' not found on ${ssh_target}. Attempting to create it using helper script..."
@@ -427,6 +448,23 @@ PY
         ${VERBOSE:+-vvv} || {
         rm -f "$inv_file"
         log_error "Ansible playbook failed to create template '${template_name}'."
+        offer_iso_alternative
+        
+        # Ask user if they want to download ISO instead
+        if [[ "$INTERACTIVE" == true ]] || [[ -t 0 ]]; then
+            echo ""
+            read -p "Would you like to download Ubuntu Server ISO instead? (y/N): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                log_info "Starting Ubuntu Server ISO download..."
+                if [[ -f "${SCRIPT_DIR}/scripts/download_ubuntu_iso.sh" ]]; then
+                    bash "${SCRIPT_DIR}/scripts/download_ubuntu_iso.sh" "${proxmox_host}" "${ssh_target}" "local" "22.04"
+                    log_info "ISO download complete. Please add 'ubuntu_iso: \"local:iso/ubuntu-22.04.5-live-server-amd64.iso\"' to config.yaml"
+                else
+                    log_error "ISO download script not found at ${SCRIPT_DIR}/scripts/download_ubuntu_iso.sh"
+                fi
+            fi
+        fi
         return 1
     }
 
@@ -435,10 +473,53 @@ PY
     # Re-check
     if ssh "${ssh_target}" "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",\$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
         log_success "Cloud-init template '${template_name}' created successfully"
+        
+        # Validate the newly created template
+        log_info "Validating newly created template..."
+        TEMPLATE_VMID=$(ssh "${ssh_target}" "qm list 2>/dev/null | grep -F \"${template_name}\" | awk '{print \$1}'")
+        
+        if [[ -n "${TEMPLATE_VMID}" ]]; then
+            BOOT_DISK=$(ssh "${ssh_target}" "qm config ${TEMPLATE_VMID} 2>/dev/null | grep -E '^(scsi0|ide0|sata0):' | head -1" || echo "")
+            
+            if [[ -z "${BOOT_DISK}" ]]; then
+                log_error "Template was created but has NO BOOT DISK! VMs will fail to boot."
+                log_error "This usually means the cloud image download was corrupted or incomplete."
+                offer_iso_alternative
+                return 1
+            else
+                log_success "Template validation passed: Boot disk configured (${BOOT_DISK})"
+            fi
+        fi
     else
         log_error "Template creation attempted but '${template_name}' still not found. Please inspect Proxmox host."
+        offer_iso_alternative
         return 1
     fi
+}
+
+offer_iso_alternative() {
+    log_warning "=============================================="
+    log_warning "Cloud-init template creation failed or is invalid."
+    log_warning "=============================================="
+    log_info ""
+    log_info "You have two options to proceed:"
+    log_info ""
+    log_info "OPTION 1: Download and use Ubuntu Server ISO instead"
+    log_info "  Run: ./scripts/download_ubuntu_iso.sh ${proxmox_host} root@${proxmox_host} local 22.04"
+    log_info "  Then add to config.yaml under 'proxmox' section:"
+    log_info "    ubuntu_iso: 'local:iso/ubuntu-22.04.5-live-server-amd64.iso'"
+    log_info ""
+    log_info "OPTION 2: Manually create the cloud-init template on Proxmox"
+    log_info "  SSH to Proxmox and run:"
+    log_info "    cd /var/tmp && wget ${image_url}"
+    log_info "    VMID=\$(pvesh get /cluster/nextid)"
+    log_info "    qm create \${VMID} --name ${template_name} --memory 2048 --cores 2"
+    log_info "    qm importdisk \${VMID} $(basename ${image_url}) ${proxmox_storage}"
+    log_info "    qm set \${VMID} --scsi0 ${proxmox_storage}:vm-\${VMID}-disk-0"
+    log_info "    qm set \${VMID} --boot order=scsi0"
+    log_info "    qm template \${VMID}"
+    log_info ""
+    log_warning "=============================================="
 }
 
 deploy_component() {
