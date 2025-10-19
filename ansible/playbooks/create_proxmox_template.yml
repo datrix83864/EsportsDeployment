@@ -14,6 +14,26 @@
     cores: 2
 
   tasks:
+    - name: Display playbook banner
+      debug:
+        msg: |
+
+          ╔════════════════════════════════════════════════════════════════╗
+          ║                                                                ║
+          ║  🔧  PROXMOX CLOUD-INIT TEMPLATE CREATION                     ║
+          ║                                                                ║
+          ╠════════════════════════════════════════════════════════════════╣
+          ║  This playbook will:                                          ║
+          ║  1. Download Ubuntu cloud image (~700MB)                      ║
+          ║  2. Verify image integrity with checksums                     ║
+          ║  3. Import image to Proxmox storage                           ║
+          ║  4. Create and configure cloud-init template                  ║
+          ║  5. Validate template is bootable                             ║
+          ║                                                                ║
+          ║  Target: {{ storage }} on {{ inventory_hostname }}
+          ║  Template Name: {{ template_name }}
+          ╚════════════════════════════════════════════════════════════════╝
+
     - name: Ensure python is present (Ansible remote requirements)
       raw: test -x "$(command -v python3)" || apt-get update && apt-get install -y python3
       changed_when: false
@@ -25,6 +45,10 @@
     - name: Set VMID fact
       set_fact:
         vmid: "{{ nextid.stdout | trim }}"
+
+    - name: Display assigned VMID
+      debug:
+        msg: "📋 Assigned VMID: {{ vmid }}"
 
     - name: Prepare temporary directory
       file:
@@ -45,10 +69,11 @@
           ╠════════════════════════════════════════════════════════════════╣
           ║  Source: {{ image_url }}
           ║  Size: ~700MB                                                  ║
-          ║  Expected Time: 1-10 minutes (depending on connection)        ║
-          ║  Timeout: 10 minutes with 3 retry attempts                    ║
+          ║  Expected Time: 1-30 minutes (depending on connection)        ║
+          ║  Timeout: 60 minutes (no timeout as long as progress is made) ║
           ║                                                                ║
           ║  ⏳ Please wait... Download progress will be shown below      ║
+          ║  💡 Even on slow connections, this will complete eventually   ║
           ╚════════════════════════════════════════════════════════════════╝
       when: not image_file.stat.exists
 
@@ -57,10 +82,16 @@
         cd {{ tmp_base }}/cloudimg-{{ vmid }}
 
         # Download with wget showing progress bar
-        echo "⬇️  Starting download..."
+        # No timeout as long as data is being received (wget default behavior)
+        # Will retry up to 20 times with exponential backoff
+        echo "⬇️  Starting download... (this may take a while on slow connections)"
         wget --progress=bar:force:noscroll \
-             --tries=3 \
-             --timeout=600 \
+             --tries=20 \
+             --read-timeout=3600 \
+             --dns-timeout=300 \
+             --connect-timeout=300 \
+             --waitretry=30 \
+             -c \
              -O "{{ image_url | basename }}" \
              "{{ image_url }}" 2>&1 | \
         while IFS= read -r line; do
@@ -72,7 +103,8 @@
 
         # Check if download succeeded
         if [ -f "{{ image_url | basename }}" ]; then
-          echo "✓ Download completed successfully"
+          FILE_SIZE=$(stat -c%s "{{ image_url | basename }}" 2>/dev/null || stat -f%z "{{ image_url | basename }}" 2>/dev/null)
+          echo "✓ Download completed successfully ($(numfmt --to=iec-i --suffix=B ${FILE_SIZE} 2>/dev/null || echo ${FILE_SIZE} bytes))"
           exit 0
         else
           echo "✗ Download failed"
@@ -82,8 +114,8 @@
         creates: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
       when: not image_file.stat.exists
       register: download_result
-      retries: 2 # Will retry twice if it fails (3 total attempts)
-      delay: 15
+      retries: 3 # Will retry the entire download up to 3 times if it fails
+      delay: 30
       until: download_result.rc == 0
 
     - name: Show download result
@@ -102,15 +134,24 @@
       register: checksum_download
 
     - name: Verify cloud image checksum
+      debug:
+        msg: "🔍 Verifying image integrity with SHA256 checksum..."
+      when: checksum_download is succeeded
+
+    - name: Calculate and compare checksums
       shell: |
         cd {{ tmp_base }}/cloudimg-{{ vmid }}
+        echo "📊 Comparing checksums..."
         EXPECTED=$(grep "{{ image_url | basename }}" SHA256SUMS | awk '{print $1}')
+        echo "   Expected: ${EXPECTED}"
+        echo "   Calculating actual checksum (this may take 30-60 seconds)..."
         ACTUAL=$(sha256sum "{{ image_url | basename }}" | awk '{print $1}')
+        echo "   Actual:   ${ACTUAL}"
         if [ "${ACTUAL}" != "${EXPECTED}" ]; then
-          echo "CHECKSUM_MISMATCH: Expected ${EXPECTED}, got ${ACTUAL}"
+          echo "❌ CHECKSUM_MISMATCH: Image is corrupted!"
           exit 1
         fi
-        echo "Checksum verified successfully"
+        echo "✅ Checksum verified successfully - image is valid"
       when: checksum_download is succeeded
       register: checksum_verify
       failed_when: checksum_verify.stdout is search("CHECKSUM_MISMATCH")
@@ -122,22 +163,40 @@
 
     - name: Check if image file is large enough
       fail:
-        msg: "Downloaded image is too small ({{ (image_size.stat.size / 1024 / 1024) | int }}MB). Expected > 200MB. Download may be corrupted."
+        msg: "❌ Downloaded image is too small ({{ (image_size.stat.size / 1024 / 1024) | int }}MB). Expected > 200MB. Download may be corrupted."
       when: image_size.stat.size < 209715200
+
+    - name: Creating Proxmox VM
+      debug:
+        msg: "🔧 Step 1/4: Creating temporary VM {{ vmid }} on Proxmox..."
 
     - name: Create temporary VM
       shell: |
         qm create {{ vmid }} --name temp-import-{{ vmid }} --memory {{ memory }} --cores {{ cores }} || true
 
+    - name: Importing disk to storage
+      debug:
+        msg: "💾 Step 2/4: Importing cloud image to storage '{{ storage }}' (this may take 1-2 minutes)..."
+
     - name: Import disk into storage
       shell: |
+        echo "   Importing {{ image_url | basename }}..."
         qm importdisk {{ vmid }} {{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }} {{ storage }}
+        echo "   ✓ Disk imported successfully"
+
+    - name: Configuring VM
+      debug:
+        msg: "⚙️  Step 3/4: Configuring VM boot settings and cloud-init..."
 
     - name: Attach imported disk as scsi0 and configure VM
       shell: |
         qm set {{ vmid }} --scsi0 {{ storage }}:vm-{{ vmid }}-disk-0
         qm set {{ vmid }} --boot order=scsi0
         qm set {{ vmid }} --agent 1
+
+    - name: Converting to template
+      debug:
+        msg: "📦 Step 4/4: Converting VM to template..."
 
     - name: Convert VM to template
       shell: |
@@ -147,6 +206,10 @@
       shell: |
         qm set {{ vmid }} --name {{ template_name }} || true
 
+    - name: Validating template
+      debug:
+        msg: "🔍 Validating template boot disk configuration..."
+
     - name: Validate template has boot disk configured
       shell: |
         qm config {{ vmid }} | grep -E '^(scsi0|ide0|sata0):'
@@ -155,7 +218,11 @@
 
     - name: Display boot disk configuration
       debug:
-        msg: "✓ Template validated - Boot disk: {{ boot_disk_check.stdout }}"
+        msg: "✅ Template validated - Boot disk: {{ boot_disk_check.stdout }}"
+
+    - name: Cleaning up
+      debug:
+        msg: "🧹 Cleaning up temporary files..."
 
     - name: Cleanup temporary files
       file:
@@ -165,11 +232,16 @@
     - name: Show completion message
       debug:
         msg: |
-          ========================================
-          SUCCESS! Template created and validated
-          ========================================
-          Template Name: {{ template_name }}
-          VMID: {{ vmid }}
-          Host: {{ inventory_hostname }}
-          Boot Disk: {{ boot_disk_check.stdout }}
-          ========================================
+
+          ╔════════════════════════════════════════════════════════════════╗
+          ║                                                                ║
+          ║  ✅  SUCCESS! CLOUD-INIT TEMPLATE CREATED & VALIDATED         ║
+          ║                                                                ║
+          ╠════════════════════════════════════════════════════════════════╣
+          ║  Template Name:  {{ template_name }}
+          ║  VMID:           {{ vmid }}
+          ║  Proxmox Host:   {{ inventory_hostname }}
+          ║  Boot Disk:      {{ boot_disk_check.stdout }}
+          ╚════════════════════════════════════════════════════════════════╝
+
+          🚀 Template is ready for VM deployment!
