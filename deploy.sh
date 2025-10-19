@@ -308,17 +308,23 @@ PYTHON_SCRIPT
     fi
 
     # Quick sanity check: ensure proxmox_node is set in the generated tfvars JSON
-    if python3 -c "import json
+    if ! python3 -c "import json, sys
 try:
     d=json.load(open('terraform/terraform.tfvars.json'))
     pn=d.get('proxmox_node','')
     if not pn:
-        raise SystemExit(2)
-except SystemExit:
-    print('[ERROR] proxmox_node is empty in terraform/terraform.tfvars.json.\n  Please set proxmox.node_name (or proxmox.node) in config.yaml or set TF_VAR_proxmox_node before running deploy.sh', file=sys.stderr)
-    exit(1)
-"; then
-        log_error "proxmox_node is not set in terraform/terraform.tfvars.json"
+        print('[ERROR] proxmox_node is empty in terraform/terraform.tfvars.json.', file=sys.stderr)
+        print('  Please set proxmox.node_name (or proxmox.node) in config.yaml', file=sys.stderr)
+        print('  Or set TF_VAR_proxmox_node environment variable', file=sys.stderr)
+        sys.exit(1)
+    else:
+        print(f'[INFO] proxmox_node set to: {pn}', file=sys.stderr)
+        sys.exit(0)
+except Exception as e:
+    print(f'[ERROR] Failed to validate terraform.tfvars.json: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1; then
+        log_error "proxmox_node validation failed"
         exit 1
     fi
     
