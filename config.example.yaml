@@ -51,6 +51,7 @@ proxmox:
   # Example:
   #   ubuntu_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
   ubuntu_image_url: ""
+  ubuntu_iso: "local:iso/ubuntu-24.04.3-live-server-amd64.iso"
 
 # Virtual Machine Resource Allocation
 vms:

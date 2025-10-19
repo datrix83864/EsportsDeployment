@@ -21,6 +21,7 @@ The cloud-init template creation script now includes:
 New script to download and prepare Ubuntu Server ISO as an alternative to cloud-init templates:
 
 **Features:**
+
 - Downloads official Ubuntu Server ISO (supports 20.04, 22.04, 24.04)
 - Verifies checksum before upload
 - Uploads to Proxmox ISO storage
@@ -28,6 +29,7 @@ New script to download and prepare Ubuntu Server ISO as an alternative to cloud-
 - Provides configuration instructions
 
 **Usage:**
+
 ```bash
 ./scripts/download_ubuntu_iso.sh <proxmox-host> root@<proxmox-host> local 22.04
 ```
@@ -37,16 +39,19 @@ New script to download and prepare Ubuntu Server ISO as an alternative to cloud-
 The main deployment script now:
 
 **Template Validation:**
+
 - Checks if existing templates have boot disks configured
 - Removes and recreates invalid templates automatically
 - Validates newly created templates before proceeding
 
 **Fallback Options:**
+
 - Offers to download Ubuntu ISO if template creation fails
 - Provides manual template creation instructions
 - Interactive prompts for next steps
 
 **Better Error Messages:**
+
 - Clear explanation of what went wrong
 - Specific commands to fix issues
 - Alternative solutions offered
@@ -56,6 +61,7 @@ The main deployment script now:
 **New File: `docs/troubleshooting-boot-issues.md`**
 
 Complete guide covering:
+
 - Symptoms and root causes of boot issues
 - Step-by-step diagnostic procedures
 - Multiple solution paths (template recreation, ISO alternative, manual creation)
@@ -66,6 +72,7 @@ Complete guide covering:
 **Updated: `docs/troubleshooting.md`**
 
 General troubleshooting guide with:
+
 - Quick links to specific issues
 - Common issues organized by symptom
 - Network, Terraform, and Ansible troubleshooting
@@ -143,6 +150,7 @@ Our fixes:
 
 **Before:** VMs created but infinite boot loop
 **After:** 
+
 1. Checksum validation fails
 2. Automatic re-download triggered
 3. If still fails, offers ISO alternative
@@ -152,6 +160,7 @@ Our fixes:
 
 **Before:** Deploy succeeds but VMs can't boot
 **After:**
+
 1. Template validation detects missing boot disk
 2. Template automatically removed
 3. Fresh template created with validation
@@ -161,6 +170,7 @@ Our fixes:
 
 **Before:** Partial download creates invalid template
 **After:**
+
 1. File size validation catches incomplete download
 2. Checksum verification fails
 3. User offered ISO alternative
