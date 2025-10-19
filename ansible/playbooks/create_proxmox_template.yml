@@ -32,11 +32,73 @@
         state: directory
         mode: "0755"
 
-    - name: Download cloud image
+    - name: Check if cloud image already exists
+      stat:
+        path: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
+      register: image_file
+
+    - name: Display download message
+      debug:
+        msg: |
+          Downloading Ubuntu cloud image from {{ image_url }}
+          This is a ~700MB file and may take 5-10 minutes depending on your connection.
+          Timeout is set to 10 minutes with 3 retry attempts.
+      when: not image_file.stat.exists
+
+    - name: Download cloud image (this may take several minutes for ~700MB file)
       get_url:
         url: "{{ image_url }}"
         dest: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
         mode: "0644"
+        timeout: 600 # 10 minutes timeout for large file download
+        force: false # Don't re-download if file exists
+      when: not image_file.stat.exists
+      register: download_result
+      retries: 3 # Retry up to 3 times on failure
+      delay: 10 # Wait 10 seconds between retries
+      until: download_result is succeeded
+      ignore_errors: true
+
+    - name: Fallback to wget if get_url fails
+      shell: |
+        cd {{ tmp_base }}/cloudimg-{{ vmid }}
+        wget -q --show-progress -O "{{ image_url | basename }}" "{{ image_url }}"
+      when:
+        - not image_file.stat.exists
+        - download_result is failed
+      register: wget_result
+
+    - name: Download SHA256SUMS for verification
+      get_url:
+        url: "{{ image_url | regex_replace('/[^/]+$', '/SHA256SUMS') }}"
+        dest: "{{ tmp_base }}/cloudimg-{{ vmid }}/SHA256SUMS"
+        timeout: 30
+      ignore_errors: true
+      register: checksum_download
+
+    - name: Verify cloud image checksum
+      shell: |
+        cd {{ tmp_base }}/cloudimg-{{ vmid }}
+        EXPECTED=$(grep "{{ image_url | basename }}" SHA256SUMS | awk '{print $1}')
+        ACTUAL=$(sha256sum "{{ image_url | basename }}" | awk '{print $1}')
+        if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+          echo "CHECKSUM_MISMATCH: Expected ${EXPECTED}, got ${ACTUAL}"
+          exit 1
+        fi
+        echo "Checksum verified successfully"
+      when: checksum_download is succeeded
+      register: checksum_verify
+      failed_when: checksum_verify.stdout is search("CHECKSUM_MISMATCH")
+
+    - name: Validate image file size (should be > 200MB)
+      stat:
+        path: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
+      register: image_size
+
+    - name: Check if image file is large enough
+      fail:
+        msg: "Downloaded image is too small ({{ (image_size.stat.size / 1024 / 1024) | int }}MB). Expected > 200MB. Download may be corrupted."
+      when: image_size.stat.size < 209715200
 
     - name: Create temporary VM
       shell: |
@@ -60,6 +122,16 @@
       shell: |
         qm set {{ vmid }} --name {{ template_name }} || true
 
+    - name: Validate template has boot disk configured
+      shell: |
+        qm config {{ vmid }} | grep -E '^(scsi0|ide0|sata0):'
+      register: boot_disk_check
+      failed_when: boot_disk_check.rc != 0
+
+    - name: Display boot disk configuration
+      debug:
+        msg: "✓ Template validated - Boot disk: {{ boot_disk_check.stdout }}"
+
     - name: Cleanup temporary files
       file:
         path: "{{ tmp_base }}/cloudimg-{{ vmid }}"
@@ -67,4 +139,12 @@
 
     - name: Show completion message
       debug:
-        msg: "Template {{ template_name }} created on host {{ inventory_hostname }} (VMID {{ vmid }})"
+        msg: |
+          ========================================
+          SUCCESS! Template created and validated
+          ========================================
+          Template Name: {{ template_name }}
+          VMID: {{ vmid }}
+          Host: {{ inventory_hostname }}
+          Boot Disk: {{ boot_disk_check.stdout }}
+          ========================================

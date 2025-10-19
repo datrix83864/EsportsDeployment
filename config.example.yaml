@@ -51,7 +51,14 @@ proxmox:
   # Example:
   #   ubuntu_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
   ubuntu_image_url: ""
-  ubuntu_iso: "local:iso/ubuntu-24.04.3-live-server-amd64.iso"
+
+  # OPTION A: Use cloud-init template (RECOMMENDED for automated deployment)
+  # Leave ubuntu_iso commented out to use cloud-init template
+  # The deploy script will automatically create the template with validation
+
+  # OPTION B: Use Ubuntu Server ISO (FALLBACK - requires manual installation or autoinstall config)
+  # Only use this if cloud-init template creation fails repeatedly
+  # ubuntu_iso: "local:iso/ubuntu-24.04.3-live-server-amd64.iso"
 
 # Virtual Machine Resource Allocation
 vms:
