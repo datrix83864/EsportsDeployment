@@ -36,6 +36,9 @@ VERBOSE=false
 DRY_RUN=false
 SKIP_VALIDATION=false
 COMPONENT=""
+INTERACTIVE=false
+AUTO_CONFIRM=false
+INTERACTIVE_CONFIG=false
 
 # Functions
 log_info() {
@@ -78,6 +81,8 @@ Examples:
   $0 -c myconfig.yaml                   # Use custom config
   $0 --component lancache               # Deploy only LANCache
   $0 -d --verbose                       # Dry run with verbose output
+    $0 --interactive                     # Run interactive guided mode
+    $0 --yes                             # Automatically answer yes to confirmations (useful in scripts)
 
 EOF
     exit 0
@@ -108,6 +113,19 @@ parse_arguments() {
             --component)
                 COMPONENT="$2"
                 shift 2
+                ;;
+            --interactive)
+                INTERACTIVE=true
+                shift
+                ;;
+            --configure)
+                # Launch interactive configuration editor and exit
+                INTERACTIVE_CONFIG=true
+                shift
+                ;;
+            --yes)
+                AUTO_CONFIRM=true
+                shift
                 ;;
             *)
                 log_error "Unknown option: $1"
@@ -633,11 +651,193 @@ EOF
     echo ""
 }
 
+prompt_confirm() {
+    # prompt_confirm <message>
+    local msg="$1"
+    if [[ "$AUTO_CONFIRM" == true ]]; then
+        log_info "Auto-confirm enabled; proceeding: $msg"
+        return 0
+    fi
+    # Read from /dev/tty to avoid issues when stdin is redirected
+    while true; do
+        read -r -p "$msg [y/N]: " yn < /dev/tty || return 1
+        case "$yn" in
+            [Yy]* ) return 0 ;;
+            [Nn]*|"" ) return 1 ;;
+            * ) echo "Please answer y or n." ;;
+        esac
+    done
+}
+
+interactive_menu() {
+    echo "Interactive deployment menu"
+    echo "----------------------------"
+    PS3='Select an action: '
+    options=("Validate config" "Convert config for Terraform" "Preflight checks" "Ensure cloud-init template" "Provision infrastructure (Terraform)" "Create Ansible inventory" "Deploy component" "Full deploy (all)" "Edit configuration" "Show summary" "Quit")
+    select opt in "${options[@]}"; do
+        case $REPLY in
+            1)
+                validate_config || true
+                ;;
+            2)
+                convert_config_for_terraform || true
+                ;;
+            3)
+                preflight_checks || true
+                ;;
+            4)
+                ensure_cloudinit_template || true
+                ;;
+            5)
+                if prompt_confirm "About to run 'terraform apply' (may change infrastructure). Continue?"; then
+                    provision_infrastructure || true
+                else
+                    log_info "Skipping Terraform apply"
+                fi
+                ;;
+            6)
+                create_inventory || true
+                ;;
+            7)
+                echo "Available components: ipxe, lancache, fileserver, windows, all"
+                read -r -p "Component to deploy: " comp < /dev/tty
+                deploy_component "${comp}" || true
+                ;;
+            8)
+                if prompt_confirm "About to run full deploy (Terraform + Ansible). Continue?"; then
+                    provision_infrastructure || true
+                    create_inventory || true
+                    deploy_component all || true
+                else
+                    log_info "Skipping full deploy"
+                fi
+                ;;
+            9)
+                interactive_config_editor || true
+                ;;
+            10)
+                show_summary || true
+                ;;
+            11)
+                break
+                ;;
+            *) echo "Invalid option." ;;
+        esac
+        echo ""
+    done
+}
+
+interactive_config_editor() {
+    # Prompts user for common configuration values and writes them to config.yaml
+    local cfg_file="${PROJECT_ROOT}/config.yaml"
+
+    # Ensure config file exists (copy example if not)
+    if [[ ! -f "$cfg_file" ]]; then
+        if [[ -f "${PROJECT_ROOT}/config.example.yaml" ]]; then
+            cp "${PROJECT_ROOT}/config.example.yaml" "$cfg_file"
+            log_info "Created $cfg_file from example"
+        else
+            log_error "No config.example.yaml found to base new config on"
+            return 1
+        fi
+    fi
+
+    echo "Interactive configuration editor"
+    echo "Press Enter to keep current value in brackets"
+
+    # Helper to read a value with a default from config.yaml using python
+    read_with_default() {
+        local key_path="$1" # e.g. proxmox.host or network.ipxe_server_ip
+        local cur
+        cur=$(python3 - <<PY
+import yaml,sys
+cfg=yaml.safe_load(open('$cfg_file')) or {}
+keys='${key_path}'.split('.')
+v=cfg
+for k in keys:
+    if isinstance(v,dict):
+        v=v.get(k,None)
+    else:
+        v=None
+print('' if v is None else v)
+PY
+)
+        local prompt="$2"
+        local val
+        read -r -p "$prompt [$cur]: " val < /dev/tty
+        if [[ -z "$val" ]]; then
+            printf "%s" "$cur"
+        else
+            printf "%s" "$val"
+        fi
+    }
+
+    # Collect values
+    prox_host=$(read_with_default "proxmox.host" "Proxmox host (IP or hostname)")
+    prox_node=$(read_with_default "proxmox.node_name" "Proxmox node name")
+    prox_vm_storage=$(read_with_default "proxmox.vm_storage" "Proxmox VM storage")
+    ipxe_ip=$(read_with_default "network.ipxe_server_ip" "iPXE server IP")
+    lancache_ip=$(read_with_default "network.lancache_server_ip" "LANCache server IP")
+    fileserver_ip=$(read_with_default "network.file_server_ip" "File server IP")
+
+    # Confirm and write back using Python to safely merge
+    echo ""
+    echo "About to write the following values to $cfg_file:"
+    echo "  proxmox.host = $prox_host"
+    echo "  proxmox.node_name = $prox_node"
+    echo "  proxmox.vm_storage = $prox_vm_storage"
+    echo "  network.ipxe_server_ip = $ipxe_ip"
+    echo "  network.lancache_server_ip = $lancache_ip"
+    echo "  network.file_server_ip = $fileserver_ip"
+
+    if ! prompt_confirm "Write these values to $cfg_file?"; then
+        log_info "Aborting configuration update"
+        return 0
+    fi
+
+    # Merge and write using Python
+    python3 - <<PY
+import yaml,sys
+cfg_path = '$cfg_file'
+cfg = yaml.safe_load(open(cfg_path)) or {}
+def set_path(cfg, path, val):
+    keys = path.split('.')
+    d = cfg
+    for k in keys[:-1]:
+        if k not in d or not isinstance(d[k], dict):
+            d[k] = {}
+        d = d[k]
+    d[keys[-1]] = val
+
+set_path(cfg, 'proxmox.host', '${prox_host}')
+set_path(cfg, 'proxmox.node_name', '${prox_node}')
+set_path(cfg, 'proxmox.vm_storage', '${prox_vm_storage}')
+set_path(cfg, 'network.ipxe_server_ip', '${ipxe_ip}')
+set_path(cfg, 'network.lancache_server_ip', '${lancache_ip}')
+set_path(cfg, 'network.file_server_ip', '${fileserver_ip}')
+
+with open(cfg_path, 'w') as f:
+    yaml.safe_dump(cfg, f, default_flow_style=False)
+
+print('Wrote updated configuration to', cfg_path)
+PY
+
+    # Regenerate terraform vars JSON
+    convert_config_for_terraform || true
+    log_success "Configuration update complete"
+}
+
 main() {
     banner
     
     # Parse command line arguments
     parse_arguments "$@"
+
+    # If non-interactive configure requested, run that and exit
+    if [[ "$INTERACTIVE_CONFIG" == true ]]; then
+        interactive_config_editor
+        exit 0
+    fi
     
     # Set default component if not specified
     if [[ -z "$COMPONENT" ]]; then
@@ -667,6 +867,13 @@ main() {
     
     log_info "Starting deployment process..."
     
+    # If interactive mode requested, present menu and exit
+    if [[ "$INTERACTIVE" == true ]]; then
+        interactive_menu
+        log_info "Interactive session complete"
+        exit 0
+    fi
+
     # Provision VMs with Terraform
     provision_infrastructure
     
