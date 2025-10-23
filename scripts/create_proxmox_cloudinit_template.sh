@@ -30,12 +30,12 @@ SSH_OPTS="$*"
 
 echo "Creating Proxmox cloud-init template '${TEMPLATE_NAME}' on ${PROXMOX_HOST} (storage: ${STORAGE})"
 
-ssh ${SSH_OPTS} "${PROXMOX_SSH_TARGET}" bash -s <<'REMOTE'
+ssh ${SSH_OPTS} "${PROXMOX_SSH_TARGET}" bash -s "${STORAGE}" "${TEMPLATE_NAME}" "${IMAGE_URL}" <<'REMOTE'
 set -euo pipefail
 
-STORAGE="${STORAGE}"
-TEMPLATE_NAME="${TEMPLATE_NAME}"
-IMAGE_URL="${IMAGE_URL}"
+STORAGE="$1"
+TEMPLATE_NAME="$2"
+IMAGE_URL="$3"
 
 # Acquire a new VMID from the cluster
 VMID=$(pvesh get /cluster/nextid)
