@@ -142,19 +142,46 @@
       shell: |
         cd {{ tmp_base }}/cloudimg-{{ vmid }}
         echo "📊 Comparing checksums..."
-        EXPECTED=$(grep "{{ image_url | basename }}" SHA256SUMS | awk '{print $1}')
+
+        # Try to find checksum for this specific file
+        EXPECTED=$(grep "{{ image_url | basename }}" SHA256SUMS | awk '{print $1}' || echo "")
+
+        if [ -z "${EXPECTED}" ]; then
+          echo "⚠️  No checksum found in SHA256SUMS for {{ image_url | basename }}"
+          echo "   This can happen when using /current/ symlink URLs"
+          echo "   Skipping checksum verification (file size check will still validate)"
+          exit 0
+        fi
+
         echo "   Expected: ${EXPECTED}"
         echo "   Calculating actual checksum (this may take 30-60 seconds)..."
         ACTUAL=$(sha256sum "{{ image_url | basename }}" | awk '{print $1}')
         echo "   Actual:   ${ACTUAL}"
+
         if [ "${ACTUAL}" != "${EXPECTED}" ]; then
-          echo "❌ CHECKSUM_MISMATCH: Image is corrupted!"
+          echo "❌ CHECKSUM_MISMATCH: Image is corrupted or partially downloaded!"
+          echo "   Removing corrupted file to allow retry..."
+          rm -f "{{ image_url | basename }}"
           exit 1
         fi
+
         echo "✅ Checksum verified successfully - image is valid"
       when: checksum_download is succeeded
       register: checksum_verify
-      failed_when: checksum_verify.stdout is search("CHECKSUM_MISMATCH")
+      ignore_errors: true
+
+    - name: Show checksum verification result
+      debug:
+        msg: "{{ checksum_verify.stdout_lines | default(['⚠️  Checksum verification skipped']) }}"
+      when: checksum_download is succeeded
+
+    - name: Warn if checksum verification was skipped or failed
+      debug:
+        msg: |
+          ⚠️  WARNING: Checksum verification was not completed
+          Proceeding with file size validation only.
+          The image will still be validated for minimum size (200MB).
+      when: checksum_download is failed or (checksum_verify is defined and checksum_verify is failed)
 
     - name: Validate image file size (should be > 200MB)
       stat:

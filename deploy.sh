@@ -448,6 +448,57 @@ PY
         ${VERBOSE:+-vvv} || {
         rm -f "$inv_file"
         log_error "Ansible playbook failed to create template '${template_name}'."
+        
+        # Offer to clean up and retry
+        log_warning "=============================================="
+        log_warning "Template creation failed!"
+        log_warning "=============================================="
+        log_info ""
+        log_info "This failure might be due to:"
+        log_info "  1. Corrupted or partial download (checksum mismatch)"
+        log_info "  2. Network connectivity issues during download"
+        log_info "  3. Insufficient disk space on Proxmox"
+        log_info ""
+        
+        if [[ "$INTERACTIVE" == true ]] || [[ -t 0 ]]; then
+            echo ""
+            read -p "Clean up failed files and retry? (y/N): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                log_info "Cleaning up failed template files..."
+                
+                # Clean up using helper script
+                if [[ -f "${SCRIPT_DIR}/scripts/cleanup_failed_template.sh" ]]; then
+                    bash "${SCRIPT_DIR}/scripts/cleanup_failed_template.sh" "${ssh_target}"
+                else
+                    # Manual cleanup
+                    log_info "Removing temporary cloudimg directories..."
+                    ssh "${ssh_target}" "rm -rf /var/tmp/cloudimg-*" || true
+                fi
+                
+                # Retry
+                log_info "Retrying template creation..."
+                inv_file="/tmp/proxmox_inv_retry_$$.ini"
+                echo "[proxmox]" > "$inv_file"
+                echo "${ssh_target}" >> "$inv_file"
+                
+                if ansible-playbook -i "$inv_file" "${SCRIPT_DIR}/ansible/playbooks/create_proxmox_template.yml" \
+                    -e "storage=${proxmox_storage}" \
+                    -e "template_name=${template_name}" \
+                    -e "image_url=${image_url}" \
+                    ${VERBOSE:+-vvv}; then
+                    rm -f "$inv_file"
+                    log_success "Template created successfully on retry!"
+                    return 0
+                else
+                    rm -f "$inv_file"
+                    log_error "Template creation failed again after retry."
+                    offer_iso_alternative
+                    return 1
+                fi
+            fi
+        fi
+        
         offer_iso_alternative
         
         # Ask user if they want to download ISO instead
