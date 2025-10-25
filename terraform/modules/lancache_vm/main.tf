@@ -35,11 +35,15 @@ resource "proxmox_vm_qemu" "lancache_server" {
     model  = "virtio"
   }
 
-  # NOTE: When cloning from template, do NOT specify disk blocks for scsi0!
-  # Specifying disk size/storage causes the provider to create a NEW empty disk
-  # instead of using the cloned bootable disk from the template. The boot disk
-  # (scsi0) will be automatically cloned from the template.
-  
+  # Boot disk - cloned from template
+  disk {
+    slot    = "scsi0"
+    type    = "disk"
+    storage = var.storage_pool
+    size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.disk_size, null) != null) ? var.config.vms.lancache_server.disk_size : var.disk_size}G"
+    cache   = "writethrough"
+  }
+
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!
   disk {
     slot = "ide2"
