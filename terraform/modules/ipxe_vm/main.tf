@@ -53,16 +53,11 @@ resource "proxmox_vm_qemu" "ipxe_server" {
     link_down = false
   }
   
-  # Disk configuration
-  disk {
-    slot    = "scsi0"
-    type    = "disk"
-    storage = var.storage_pool
-    size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
-    cache   = "writethrough"
-    discard = true
-  }
-
+  # NOTE: When cloning from template, do NOT specify disk blocks for scsi0!
+  # Disk blocks interfere with template cloning - the provider creates NEW empty
+  # disks instead of using the cloned disk from the template. The boot disk (scsi0)
+  # will be automatically cloned from the template with the OS already installed.
+  
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!
   # When cloning from template, this ensures the cloud-init drive is preserved
   # When using ISO, this attaches the ISO for installation

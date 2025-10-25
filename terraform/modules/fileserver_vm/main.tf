@@ -35,14 +35,11 @@ resource "proxmox_vm_qemu" "file_server" {
     model  = "virtio"
   }
 
-  disk {
-    slot    = "scsi0"
-    type    = "disk"
-    storage = var.storage_pool
-    size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.disk_size, null) != null) ? var.config.vms.file_server.disk_size : var.disk_size}G"
-    cache   = "writethrough"
-  }
-
+  # NOTE: When cloning from template, do NOT specify disk size/storage for scsi0!
+  # The disk block configuration interferes with template cloning and causes
+  # the provider to create a NEW empty disk instead of using the cloned disk.
+  # The scsi0 disk will be automatically cloned from the template.
+  
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!
   disk {
     slot = "ide2"
