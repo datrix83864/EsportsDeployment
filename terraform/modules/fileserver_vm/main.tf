@@ -43,14 +43,12 @@ resource "proxmox_vm_qemu" "file_server" {
     cache   = "writethrough"
   }
 
-  # If an ISO is provided (and no template is used) attach it as a cdrom on IDE2
-  dynamic "disk" {
-    for_each = var.ubuntu_iso != "" && var.template_name == "" ? [1] : []
-    content {
-      slot = "ide2"
-      type = "cdrom"
-      iso  = var.ubuntu_iso
-    }
+  # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!
+  disk {
+    slot = "ide2"
+    type = var.ubuntu_iso != "" && var.template_name == "" ? "cdrom" : "cloudinit"
+    iso  = var.ubuntu_iso != "" && var.template_name == "" ? var.ubuntu_iso : null
+    storage = var.ubuntu_iso == "" || var.template_name != "" ? var.storage_pool : null
   }
 
   # Additional data disk
