@@ -62,7 +62,7 @@ resource "proxmox_vm_qemu" "ipxe_server" {
     size      = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
     cache     = "writethrough"
     discard   = true
-    replicate = true
+    replicate = false
   }
 
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!

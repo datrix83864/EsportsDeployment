@@ -43,7 +43,7 @@ resource "proxmox_vm_qemu" "file_server" {
     storage   = var.storage_pool
     size      = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.disk_size, null) != null) ? var.config.vms.file_server.disk_size : var.disk_size}G"
     cache     = "writethrough"
-    replicate = true
+    replicate = false
   }
 
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!
