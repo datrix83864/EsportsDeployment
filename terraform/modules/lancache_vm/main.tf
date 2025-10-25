@@ -36,14 +36,14 @@ resource "proxmox_vm_qemu" "lancache_server" {
   }
 
   # Boot disk - cloned from template
-  # Use replicate=0 to tell provider to preserve cloned disk, not create new one
+  # Use replicate=true to tell provider to preserve cloned disk, not create new one
   disk {
     slot      = "scsi0"
     type      = "disk"
     storage   = var.storage_pool
     size      = "${(length(keys(var.config)) > 0 && try(var.config.vms.lancache_server.disk_size, null) != null) ? var.config.vms.lancache_server.disk_size : var.disk_size}G"
     cache     = "writethrough"
-    replicate = 0
+    replicate = true
   }
 
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!
