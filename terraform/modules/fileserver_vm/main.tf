@@ -35,13 +35,15 @@ resource "proxmox_vm_qemu" "file_server" {
     model  = "virtio"
   }
 
-  # Boot disk - cloned from template
+  # Boot disk - cloned from template  
+  # Use replicate=0 to preserve the cloned disk
   disk {
-    slot    = "scsi0"
-    type    = "disk"
-    storage = var.storage_pool
-    size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.disk_size, null) != null) ? var.config.vms.file_server.disk_size : var.disk_size}G"
-    cache   = "writethrough"
+    slot      = "scsi0"
+    type      = "disk"
+    storage   = var.storage_pool
+    size      = "${(length(keys(var.config)) > 0 && try(var.config.vms.file_server.disk_size, null) != null) ? var.config.vms.file_server.disk_size : var.disk_size}G"
+    cache     = "writethrough"
+    replicate = 0
   }
 
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!

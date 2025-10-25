@@ -54,15 +54,15 @@ resource "proxmox_vm_qemu" "ipxe_server" {
   }
   
   # Boot disk - cloned from template
-  # When cloning, we need to specify the disk to ensure it's created/cloned properly
-  # The size can be larger than template (will resize), but not smaller
+  # Use replicate=0 to preserve the cloned disk instead of creating a new empty one
   disk {
-    slot    = "scsi0"
-    type    = "disk"
-    storage = var.storage_pool
-    size    = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
-    cache   = "writethrough"
-    discard = true
+    slot      = "scsi0"
+    type      = "disk"
+    storage   = var.storage_pool
+    size      = "${(length(keys(var.config)) > 0 && try(var.config.vms.ipxe_server.disk_size, null) != null) ? var.config.vms.ipxe_server.disk_size : var.disk_size}G"
+    cache     = "writethrough"
+    discard   = true
+    replicate = 0
   }
 
   # Cloud-init drive (ide2) - REQUIRED for cloud-init to work!
