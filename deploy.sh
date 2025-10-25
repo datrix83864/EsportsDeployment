@@ -399,7 +399,7 @@ PY
     if ssh "${ssh_target}" "qm list 2>/dev/null | awk '{for(i=2;i<=NF;i++) printf \"%s \",\$i; print \"\"}' | grep -F \"${template_name}\" >/dev/null 2>&1"; then
         log_success "Cloud-init template '${template_name}' already present on ${ssh_target}"
         
-        # Validate the template is actually bootable
+        # Validate the template is actually bootable and has cloud-init
         log_info "Validating template configuration..."
         TEMPLATE_VMID=$(ssh "${ssh_target}" "qm list 2>/dev/null | grep -F \"${template_name}\" | awk '{print \$1}'")
         
@@ -407,13 +407,22 @@ PY
             # Check if template has a valid boot disk
             BOOT_DISK=$(ssh "${ssh_target}" "qm config ${TEMPLATE_VMID} 2>/dev/null | grep -E '^(scsi0|ide0|sata0):' | head -1" || echo "")
             
+            # Check if template has cloud-init drive
+            CLOUDINIT_DRIVE=$(ssh "${ssh_target}" "qm config ${TEMPLATE_VMID} 2>/dev/null | grep -E '^ide2:.*cloudinit' | head -1" || echo "")
+            
             if [[ -z "${BOOT_DISK}" ]]; then
                 log_error "Template '${template_name}' exists but has NO BOOT DISK configured!"
                 log_error "This will cause VMs to fail to boot (infinite boot loop)."
                 log_info "Removing invalid template and recreating..."
                 ssh "${ssh_target}" "qm destroy ${TEMPLATE_VMID} --purge || true"
+            elif [[ -z "${CLOUDINIT_DRIVE}" ]]; then
+                log_error "Template '${template_name}' exists but has NO CLOUD-INIT DRIVE configured!"
+                log_error "This will prevent cloud-init from configuring VMs (no SSH keys, no network config, etc.)."
+                log_info "Removing invalid template and recreating..."
+                ssh "${ssh_target}" "qm destroy ${TEMPLATE_VMID} --purge || true"
             else
                 log_success "Template validated: Boot disk present (${BOOT_DISK})"
+                log_success "Template validated: Cloud-init drive present (${CLOUDINIT_DRIVE})"
                 return 0
             fi
         else
@@ -528,14 +537,21 @@ PY
         
         if [[ -n "${TEMPLATE_VMID}" ]]; then
             BOOT_DISK=$(ssh "${ssh_target}" "qm config ${TEMPLATE_VMID} 2>/dev/null | grep -E '^(scsi0|ide0|sata0):' | head -1" || echo "")
+            CLOUDINIT_DRIVE=$(ssh "${ssh_target}" "qm config ${TEMPLATE_VMID} 2>/dev/null | grep -E '^ide2:.*cloudinit' | head -1" || echo "")
             
             if [[ -z "${BOOT_DISK}" ]]; then
                 log_error "Template was created but has NO BOOT DISK! VMs will fail to boot."
                 log_error "This usually means the cloud image download was corrupted or incomplete."
                 offer_iso_alternative
                 return 1
+            elif [[ -z "${CLOUDINIT_DRIVE}" ]]; then
+                log_error "Template was created but has NO CLOUD-INIT DRIVE! VMs cannot be configured."
+                log_error "This usually means the qm set --ide2 command failed."
+                offer_iso_alternative
+                return 1
             else
                 log_success "Template validation passed: Boot disk configured (${BOOT_DISK})"
+                log_success "Template validation passed: Cloud-init drive configured (${CLOUDINIT_DRIVE})"
             fi
         fi
     else

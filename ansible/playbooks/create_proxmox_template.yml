@@ -270,6 +270,14 @@
           exit 1
         fi
 
+        # Add cloud-init drive (CRITICAL for cloud-init to work!)
+        if qm set {{ vmid }} --ide2 {{ storage }}:cloudinit; then
+          echo "✓ Cloud-init drive added (ide2)"
+        else
+          echo "❌ Failed to add cloud-init drive!"
+          exit 1
+        fi
+
         # Set boot order
         if qm set {{ vmid }} --boot order=scsi0; then
           echo "✓ Boot order set to scsi0"
@@ -285,6 +293,13 @@
           echo "⚠  Warning: Failed to enable QEMU agent (non-critical)"
         fi
 
+        # Set serial console (helpful for debugging)
+        if qm set {{ vmid }} --serial0 socket --vga serial0; then
+          echo "✓ Serial console configured"
+        else
+          echo "⚠  Warning: Failed to set serial console (non-critical)"
+        fi
+
         # Verify the configuration
         echo ""
         echo "Verifying VM configuration..."
@@ -293,6 +308,16 @@
           echo "✓ Boot disk configured: ${SCSI0_LINE}"
         else
           echo "❌ CRITICAL ERROR: No boot disk (scsi0) found in VM config!"
+          echo "Full VM config:"
+          qm config {{ vmid }}
+          exit 1
+        fi
+
+        if qm config {{ vmid }} | grep -E "^ide2:" > /dev/null; then
+          IDE2_LINE=$(qm config {{ vmid }} | grep "^ide2:")
+          echo "✓ Cloud-init drive configured: ${IDE2_LINE}"
+        else
+          echo "❌ CRITICAL ERROR: No cloud-init drive (ide2) found in VM config!"
           echo "Full VM config:"
           qm config {{ vmid }}
           exit 1
@@ -326,17 +351,41 @@
 
     - name: Validating template
       debug:
-        msg: "🔍 Validating template boot disk configuration..."
+        msg: "🔍 Validating template boot disk and cloud-init configuration..."
 
-    - name: Validate template has boot disk configured
+    - name: Validate template has boot disk and cloud-init configured
       shell: |
-        qm config {{ vmid }} | grep -E '^(scsi0|ide0|sata0):'
+        #!/bin/bash
+        ERRORS=0
+
+        # Check for boot disk
+        if ! qm config {{ vmid }} | grep -E '^(scsi0|ide0|sata0):' > /dev/null; then
+          echo "❌ ERROR: No boot disk found!"
+          ERRORS=$((ERRORS + 1))
+        fi
+
+        # Check for cloud-init drive
+        if ! qm config {{ vmid }} | grep -E '^ide2:.*cloudinit' > /dev/null; then
+          echo "❌ ERROR: No cloud-init drive found!"
+          ERRORS=$((ERRORS + 1))
+        fi
+
+        if [ $ERRORS -gt 0 ]; then
+          echo "Full config:"
+          qm config {{ vmid }}
+          exit 1
+        fi
+
+        # Print successful config
+        qm config {{ vmid }} | grep -E '^(scsi0|ide2):'
+      args:
+        executable: /bin/bash
       register: boot_disk_check
       failed_when: boot_disk_check.rc != 0
 
-    - name: Display boot disk configuration
+    - name: Display template configuration
       debug:
-        msg: "✅ Template validated - Boot disk: {{ boot_disk_check.stdout }}"
+        msg: "✅ Template validated - {{ boot_disk_check.stdout_lines | join(', ') }}"
 
     - name: Cleaning up
       debug:
