@@ -201,7 +201,18 @@
 
     - name: Create temporary VM
       shell: |
-        qm create {{ vmid }} --name temp-import-{{ vmid }} --memory {{ memory }} --cores {{ cores }} || true
+        #!/bin/bash
+        set -e
+        echo "Creating VM {{ vmid }}..."
+        qm create {{ vmid }} --name temp-import-{{ vmid }} --memory {{ memory }} --cores {{ cores }}
+        echo "✓ VM created successfully"
+      args:
+        executable: /bin/bash
+      register: vm_create_result
+
+    - name: Display VM creation result
+      debug:
+        msg: "{{ vm_create_result.stdout_lines }}"
 
     - name: Importing disk to storage
       debug:
@@ -209,9 +220,37 @@
 
     - name: Import disk into storage
       shell: |
-        echo "   Importing {{ image_url | basename }}..."
-        qm importdisk {{ vmid }} {{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }} {{ storage }}
-        echo "   ✓ Disk imported successfully"
+        #!/bin/bash
+        set -e
+        cd {{ tmp_base }}/cloudimg-{{ vmid }}
+        echo "   Importing {{ image_url | basename }} to storage {{ storage }}..."
+        echo "   This may take 1-2 minutes depending on storage speed..."
+        
+        # Import the disk and capture output
+        if qm importdisk {{ vmid }} "{{ image_url | basename }}" {{ storage }} 2>&1 | tee /tmp/import_{{ vmid }}.log; then
+          echo "   ✓ Disk imported successfully"
+          
+          # Verify the disk was created
+          if pvesm list {{ storage }} | grep -q "vm-{{ vmid }}-disk-0"; then
+            echo "   ✓ Verified: Disk vm-{{ vmid }}-disk-0 exists in storage"
+          else
+            echo "   ❌ ERROR: Disk was not created in storage!"
+            echo "   Available disks for VM {{ vmid }}:"
+            pvesm list {{ storage }} | grep "vm-{{ vmid }}" || echo "   No disks found!"
+            exit 1
+          fi
+        else
+          echo "   ❌ ERROR: qm importdisk failed!"
+          cat /tmp/import_{{ vmid }}.log
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+      register: import_result
+
+    - name: Display import result
+      debug:
+        msg: "{{ import_result.stdout_lines }}"
 
     - name: Configuring VM
       debug:
@@ -219,9 +258,59 @@
 
     - name: Attach imported disk as scsi0 and configure VM
       shell: |
-        qm set {{ vmid }} --scsi0 {{ storage }}:vm-{{ vmid }}-disk-0
-        qm set {{ vmid }} --boot order=scsi0
-        qm set {{ vmid }} --agent 1
+        #!/bin/bash
+        set -e
+        echo "Attaching disk to VM {{ vmid }}..."
+        
+        # Attach the disk
+        if qm set {{ vmid }} --scsi0 {{ storage }}:vm-{{ vmid }}-disk-0; then
+          echo "✓ Disk attached as scsi0"
+        else
+          echo "❌ Failed to attach disk!"
+          exit 1
+        fi
+        
+        # Set boot order
+        if qm set {{ vmid }} --boot order=scsi0; then
+          echo "✓ Boot order set to scsi0"
+        else
+          echo "❌ Failed to set boot order!"
+          exit 1
+        fi
+        
+        # Enable QEMU agent
+        if qm set {{ vmid }} --agent 1; then
+          echo "✓ QEMU agent enabled"
+        else
+          echo "⚠  Warning: Failed to enable QEMU agent (non-critical)"
+        fi
+        
+        # Verify the configuration
+        echo ""
+        echo "Verifying VM configuration..."
+        if qm config {{ vmid }} | grep -E "^scsi0:" > /dev/null; then
+          SCSI0_LINE=$(qm config {{ vmid }} | grep "^scsi0:")
+          echo "✓ Boot disk configured: ${SCSI0_LINE}"
+        else
+          echo "❌ CRITICAL ERROR: No boot disk (scsi0) found in VM config!"
+          echo "Full VM config:"
+          qm config {{ vmid }}
+          exit 1
+        fi
+        
+        if qm config {{ vmid }} | grep -E "^boot:" > /dev/null; then
+          BOOT_LINE=$(qm config {{ vmid }} | grep "^boot:")
+          echo "✓ Boot order configured: ${BOOT_LINE}"
+        else
+          echo "⚠  Warning: No boot order in config (may use defaults)"
+        fi
+      args:
+        executable: /bin/bash
+      register: attach_result
+
+    - name: Display attachment result
+      debug:
+        msg: "{{ attach_result.stdout_lines }}"
 
     - name: Converting to template
       debug:
