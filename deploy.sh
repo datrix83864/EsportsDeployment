@@ -359,9 +359,9 @@ ensure_cloudinit_template() {
     # Read proxmox host/node/storage and optional template name from config.yaml
     local proxmox_host proxmox_node proxmox_storage template_name image_url ssh_target use_api_token
 
-    # Get proxmox host/node/storage/template/image/api flag from config via Python
+    # Get proxmox host/node/storage/template/image from config via Python
     # Use a '|' delimiter so empty fields don't collapse when splitting on whitespace.
-    IFS='|' read -r proxmox_host proxmox_node proxmox_storage template_name image_url use_api_token < <(python3 - "$CONFIG_FILE" <<'PY'
+    IFS='|' read -r proxmox_host proxmox_node proxmox_storage template_name image_url < <(python3 - "$CONFIG_FILE" <<'PY'
 import sys,yaml
 cfg = yaml.safe_load(open(sys.argv[1])) or {}
 pm = cfg.get('proxmox', {}) or {}
@@ -370,17 +370,9 @@ node = pm.get('node_name', pm.get('node','pve'))
 storage = pm.get('vm_storage', 'local-lvm')
 tpl = pm.get('template_name', '') or ''
 img = pm.get('ubuntu_image_url') or 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img'
-# detect if API token is configured (prefer API token for terraform but can't create template with it here)
-api = bool(pm.get('api_token_id') or pm.get('api_token'))
-print('|'.join([str(x) for x in [host,node,storage,tpl,img, int(api)]]))
+print('|'.join([str(x) for x in [host,node,storage,tpl,img]]))
 PY
 )
-
-    # If api token is set in config we avoid trying SSH-based creation (user likely using token-only workflow)
-    if [[ "$use_api_token" == 1 ]]; then
-        log_info "Proxmox API token detected in config; skipping SSH-based template creation. Ensure template exists or set ubuntu_iso."
-        return 0
-    fi
 
     # Determine ssh target: allow PROXMOX_SSH_TARGET env override, otherwise default to root@host
     if [[ -n "${PROXMOX_SSH_TARGET:-}" ]]; then
@@ -392,6 +384,11 @@ PY
         fi
         ssh_target="root@${proxmox_host}"
     fi
+    
+    # NOTE: We ALWAYS try to create template via SSH, even if API token is configured.
+    # API tokens are used by Terraform for VM provisioning, but template creation
+    # requires SSH access (qm importdisk, qm set, etc.). This ensures "clone and go"
+    # workflow where users provide API creds and the script handles template creation.
 
     # Choose a sensible default template name if not provided
     if [[ -z "$template_name" ]]; then
