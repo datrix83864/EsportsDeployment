@@ -79,6 +79,7 @@
 
     - name: Download cloud image with progress monitoring
       shell: |
+        #!/bin/bash
         cd {{ tmp_base }}/cloudimg-{{ vmid }}
 
         # Download with wget showing progress bar
@@ -112,6 +113,7 @@
         fi
       args:
         creates: "{{ tmp_base }}/cloudimg-{{ vmid }}/{{ image_url | basename }}"
+        executable: /bin/bash
       when: not image_file.stat.exists
       register: download_result
       retries: 3 # Will retry the entire download up to 3 times if it fails
@@ -120,7 +122,7 @@
 
     - name: Show download result
       debug:
-        msg: "✓ Cloud image downloaded successfully ({{ (image_size.stat.size / 1024 / 1024) | int }}MB)"
+        msg: "✓ Cloud image download complete"
       when:
         - download_result is succeeded
         - not image_file.stat.exists
