@@ -113,6 +113,7 @@
         api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
         api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
         node: "{{ proxmox_node }}"
+        name: "{{ item.name }}"
         newid: "{{ item.vmid }}"
         vmid: "{{ cloud_template_vmid }}"
         clone: "{{ cloud_template_name }}"
@@ -130,6 +131,18 @@
       register: vm_creation
       async: 600
       poll: 0
+    
+    - name: Wait for VM to unlock after clone
+      shell: |
+        for i in {1..30}; do
+          lock=$(qm config {{ item.vmid }} | grep lock || true)
+          if [ -z "$lock" ]; then exit 0; fi
+          sleep 5
+        done
+        echo "Timeout waiting for VM {{ item.vmid }} unlock" >&2
+        exit 1
+      loop: "{{ vms }}"
+      when: item.vmid is defined
     
     - name: Wait for VM creation to complete
       async_status:
