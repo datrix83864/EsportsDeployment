@@ -132,6 +132,10 @@
       register: vm_creation
       async: 600
       poll: 0
+
+    - name: Pause for 5 minutes to build app cache
+      ansible.builtin.pause:
+        minutes: 5
     
     - name: Wait for VM creation to complete
       async_status:
