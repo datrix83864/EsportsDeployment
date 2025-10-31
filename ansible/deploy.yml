@@ -18,7 +18,11 @@
     proxmox_api_token_secret: "{{ proxmox.api_token_secret | default('') }}"
     proxmox_node: "{{ proxmox.node }}"
     proxmox_storage: "{{ proxmox.storage }}"
-    
+    cloud_template_name: "ubuntu-cloud"
+    cloud_template_vmid: 9000
+    cloud_image_url: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64-disk-kvm.img"
+    cloud_image_path: "/var/lib/vz/template/iso/ubuntu-22.04-server-cloudimg-amd64-disk-kvm.img"
+
     # VM definitions
     vms:
       - name: pxe-server
