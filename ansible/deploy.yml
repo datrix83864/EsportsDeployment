@@ -119,6 +119,7 @@
         clone: "{{ cloud_template_name }}"
         memory: "{{ item.memory }}"
         cores: "{{ item.cores }}"
+        skiplock: true
         net:
           net0: "virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}"
         virtio:
