@@ -122,7 +122,7 @@
         memory: "{{ item.memory }}"
         cores: "{{ item.cores }}"
         skiplock: "true"
-        ipconfig0: "ip={{ item.ip }},gw={{ network.gateway }}"
+        ipconfig: "ip={{ item.ip }},gw={{ network.gateway }}"
         net:
           net0: "virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}"
         virtio:
