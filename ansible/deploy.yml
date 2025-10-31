@@ -1,14 +1,12 @@
 ---
-# Consolidated Deployment Playbook
-# Replaces Terraform + multiple playbooks with single unified approach
-#
-# Usage:
-#   ansible-playbook -i inventory/proxmox deploy.yml -e @../config.yaml
+# Consolidated Deployment Playbook (Fully Hands-Off)
+# Usage: ansible-playbook -i inventory/proxmox deploy.yml -e @../config.yaml
 
 - name: Deploy Esports LAN Infrastructure
   hosts: localhost
   gather_facts: false
-  
+  connection: local
+
   vars:
     # Load from config.yaml via -e @config.yaml
     proxmox_host: "{{ proxmox.host }}"
@@ -18,7 +16,13 @@
     proxmox_api_token_secret: "{{ proxmox.api_token_secret | default('') }}"
     proxmox_node: "{{ proxmox.node }}"
     proxmox_storage: "{{ proxmox.storage }}"
-    
+
+    # Cloud template configuration
+    cloud_template_vmid: 9000
+    cloud_template_name: ubuntu-cloud
+    cloud_image_url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+    cloud_image_path: /tmp/jammy-server-cloudimg-amd64.img
+
     # VM definitions
     vms:
       - name: pxe-server
@@ -28,7 +32,7 @@
         cores: "{{ resources.pxe_server.cores }}"
         disk: "{{ resources.pxe_server.disk }}"
         role: pxe
-        
+
       - name: lancache-server
         vmid: 101
         ip: "{{ network.lancache_server }}"
@@ -37,7 +41,7 @@
         disk: "{{ resources.lancache_server.disk }}"
         extra_disk: "{{ resources.lancache_server.cache_disk }}"
         role: lancache
-        
+
       - name: file-server
         vmid: 102
         ip: "{{ network.file_server }}"
@@ -46,7 +50,7 @@
         disk: "{{ resources.file_server.disk }}"
         extra_disk: "{{ resources.file_server.data_disk }}"
         role: fileserver
-  
+
   tasks:
     - name: Display deployment information
       debug:
@@ -66,37 +70,41 @@
           - "This will take 15-20 minutes..."
           - ""
 
-        # Phase 0: Ensure Ubuntu Cloud Template Exists
+    # Phase 0: Ensure Ubuntu Cloud Template Exists
     - name: Check if ubuntu-cloud template exists
       stat:
-        path: /etc/pve/qemu-server/9000.conf
+        path: "/etc/pve/qemu-server/{{ cloud_template_vmid }}.conf"
       register: ubuntu_template
 
     - name: Download Ubuntu 22.04 cloud image
       get_url:
-        url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
-        dest: /tmp/jammy-server-cloudimg-amd64.img
+        url: "{{ cloud_image_url }}"
+        dest: "{{ cloud_image_path }}"
         mode: '0644'
       when: not ubuntu_template.stat.exists
 
     - name: Create Ubuntu Cloud Template if missing
-      ansible.builtin.shell: |
+      shell: |
         set -e
-        qm create 9000 --name ubuntu-cloud --memory 2048 --cores 2 --net0 virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}
-        qm importdisk 9000 /tmp/jammy-server-cloudimg-amd64.img {{ proxmox_storage }}
-        qm set 9000 --scsihw virtio-scsi-pci --scsi0 {{ proxmox_storage }}:vm-9000-disk-0
-        qm set 9000 --ide2 {{ proxmox_storage }}:cloudinit
-        qm set 9000 --boot c --bootdisk scsi0
-        qm set 9000 --serial0 socket --vga serial0
-        qm set 9000 --agent enabled=1
-        qm template 9000
+        qm create {{ cloud_template_vmid }} --name {{ cloud_template_name }} --memory 2048 --cores 2 --net0 virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}
+        qm importdisk {{ cloud_template_vmid }} {{ cloud_image_path }} {{ proxmox_storage }}
+        qm set {{ cloud_template_vmid }} --scsihw virtio-scsi-pci --scsi0 {{ proxmox_storage }}:vm-{{ cloud_template_vmid }}-disk-0
+        qm set {{ cloud_template_vmid }} --ide2 {{ proxmox_storage }}:cloudinit
+        qm set {{ cloud_template_vmid }} --boot c --bootdisk scsi0
+        qm set {{ cloud_template_vmid }} --serial0 socket --vga serial0
+        qm set {{ cloud_template_vmid }} --agent enabled=1
+        qm template {{ cloud_template_vmid }}
       args:
-        creates: /etc/pve/qemu-server/9000.conf
+        creates: "/etc/pve/qemu-server/{{ cloud_template_vmid }}.conf"
       when: not ubuntu_template.stat.exists
 
-    
-    # Phase 1: Create VMs in Proxmox
-    - name: Clone Ubuntu Cloud Template to Create VMs
+    - name: Wait a few seconds for Proxmox to register template
+      pause:
+        seconds: 5
+      when: not ubuntu_template.stat.exists
+
+    # Phase 1: Clone Ubuntu Cloud Template to Create VMs
+    - name: Clone template to new VMs
       community.proxmox.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
@@ -104,7 +112,7 @@
         api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
         api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
         node: "{{ proxmox_node }}"
-        clone: "ubuntu-cloud"
+        clone: "{{ cloud_template_name }}"
         full: yes
         vmid: "{{ item.vmid }}"
         name: "{{ item.name }}"
@@ -122,7 +130,6 @@
       loop: "{{ vms }}"
       register: vm_creation
 
-    
     - name: Wait for VM creation to complete
       async_status:
         jid: "{{ item.ansible_job_id }}"
@@ -131,7 +138,7 @@
       retries: 60
       delay: 10
       loop: "{{ vm_creation.results }}"
-    
+
     - name: Add extra data disks to VMs that need them
       community.proxmox.proxmox_disk:
         api_host: "{{ proxmox_host }}"
@@ -162,7 +169,6 @@
         sshkeys: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
       loop: "{{ vms }}"
 
-    
     - name: Start VMs
       community.proxmox.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
@@ -174,7 +180,7 @@
         vmid: "{{ item.vmid }}"
         state: started
       loop: "{{ vms }}"
-    
+
     - name: Wait for VMs to be accessible via SSH
       wait_for:
         host: "{{ item.ip }}"
@@ -182,7 +188,7 @@
         timeout: 300
         delay: 30
       loop: "{{ vms }}"
-    
+
     - name: Build dynamic inventory for next plays
       add_host:
         name: "{{ item.ip }}"
@@ -191,7 +197,7 @@
         ansible_become: yes
       loop: "{{ vms }}"
       changed_when: false
-
+      
 # Phase 2: Configure PXE Server
 - name: Configure PXE/DHCP Server
   hosts: pxe
