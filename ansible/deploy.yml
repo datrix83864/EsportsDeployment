@@ -113,8 +113,7 @@
         api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
         node: "{{ proxmox_node }}"
         vmid: "{{ item.vmid }}"
-        clone: "{{ cloud_template_name }}"
-        full: yes
+        clone: "{{ cloud_template_vmid }}"
         name: "{{ item.name }}"
         storage: "{{ proxmox_storage }}"
         memory: "{{ item.memory }}"
@@ -131,7 +130,7 @@
       register: vm_creation
       async: 600
       poll: 0
-      
+
     - name: Pause for 30 seconds
       ansible.builtin.pause:
         seconds: 30
