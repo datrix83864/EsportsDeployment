@@ -113,6 +113,8 @@
         api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
         node: "{{ proxmox_node }}"
         vmid: "{{ item.vmid }}"
+        clone: "{{ cloud_template_name }}"
+        full: yes
         name: "{{ item.name }}"
         memory: "{{ item.memory }}"
         cores: "{{ item.cores }}"
