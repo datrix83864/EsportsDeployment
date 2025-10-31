@@ -130,7 +130,6 @@
       register: vm_creation
       async: 600
       poll: 0
-      timeout: 500
     
     - name: Wait for VM creation to complete
       async_status:
@@ -138,7 +137,7 @@
       register: vm_jobs
       until: vm_jobs.finished
       retries: 60
-      delay: 10
+      delay: 20
       loop: "{{ vm_creation.results }}"
     
     - name: Add extra data disks to VMs that need them
