@@ -132,18 +132,6 @@
       async: 600
       poll: 0
     
-    - name: Wait for VM to unlock after clone
-      shell: |
-        for i in {1..30}; do
-          lock=$(qm config {{ item.vmid }} | grep lock || true)
-          if [ -z "$lock" ]; then exit 0; fi
-          sleep 5
-        done
-        echo "Timeout waiting for VM {{ item.vmid }} unlock" >&2
-        exit 1
-      loop: "{{ vms }}"
-      when: item.vmid is defined
-    
     - name: Wait for VM creation to complete
       async_status:
         jid: "{{ item.ansible_job_id }}"
