@@ -133,18 +133,9 @@
       async: 600
       poll: 0
 
-    - name: Pause for 5 minutes to build app cache
+    - name: Pause for 5 minutes to build VMs
       ansible.builtin.pause:
-        minutes: 5
-    
-    - name: Wait for VM creation to complete
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      register: vm_jobs
-      until: vm_jobs.finished
-      retries: 60
-      delay: 20
-      loop: "{{ vm_creation.results }}"
+        minutes: 3
     
     - name: Add extra data disks to VMs that need them
       community.general.proxmox_disk:
