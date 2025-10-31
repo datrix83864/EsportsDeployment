@@ -68,7 +68,7 @@
 
         # Phase 0: Ensure Ubuntu Cloud Template Exists
     - name: Check if Ubuntu cloud template exists
-      community.proxmox:
+      ansible.community.proxmox:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
@@ -101,7 +101,7 @@
     
     # Phase 1: Create VMs in Proxmox
     - name: Clone Ubuntu Cloud Template to Create VMs
-      community.proxmox_kvm:
+      ansible.community.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
@@ -137,7 +137,7 @@
       loop: "{{ vm_creation.results }}"
     
     - name: Add extra data disks to VMs that need them
-      community.proxmox_disk:
+      ansible.community.proxmox_disk:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
@@ -151,7 +151,7 @@
       when: item.extra_disk is defined
 
     - name: Configure cloud-init for cloned VMs
-      community.proxmox_kvm:
+      ansible.community.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
@@ -168,7 +168,7 @@
 
     
     - name: Start VMs
-      community.proxmox_kvm:
+      ansible.community.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
