@@ -131,7 +131,7 @@
       register: vm_creation
       async: 600
       poll: 0
-      delay: 10
+    - sleep: 30
     
     - name: Wait for VM creation to complete
       async_status:
