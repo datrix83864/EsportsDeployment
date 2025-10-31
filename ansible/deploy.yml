@@ -20,9 +20,9 @@
     proxmox_storage: "{{ proxmox.storage }}"
     cloud_template_name: "ubuntu-cloud"
     cloud_template_vmid: 9000
-    cloud_image_url: "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64-disk-kvm.img"
-    cloud_image_path: "/var/lib/vz/template/iso/ubuntu-22.04-server-cloudimg-amd64-disk-kvm.img"
-
+    cloud_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    cloud_image_path: "/var/lib/vz/template/qemu/jammy-server-cloudimg-amd64.img"
+    
     # VM definitions
     vms:
       - name: pxe-server
@@ -112,9 +112,9 @@
         api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
         api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
         node: "{{ proxmox_node }}"
-        vmid: "{{ cloud_template_vmid }}"
-        name: "{{ item.name }}"
-        storage: "{{ proxmox_storage }}"
+        newid: "{{ item.vmid }}"
+        clone: "{{ cloud_template_vmid }}"
+        name: "{{ cloud_template_name }}"
         memory: "{{ item.memory }}"
         cores: "{{ item.cores }}"
         net:
@@ -129,10 +129,7 @@
       register: vm_creation
       async: 600
       poll: 0
-
-    - name: Pause for 30 seconds
-      ansible.builtin.pause:
-        seconds: 30
+      timeout: 500
     
     - name: Wait for VM creation to complete
       async_status:
