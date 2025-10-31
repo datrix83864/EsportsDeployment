@@ -1,12 +1,14 @@
 ---
-# Consolidated Deployment Playbook (Fully Hands-Off)
-# Usage: ansible-playbook -i inventory/proxmox deploy.yml -e @../config.yaml
+# Consolidated Deployment Playbook
+# Replaces Terraform + multiple playbooks with single unified approach
+#
+# Usage:
+#   ansible-playbook -i inventory/proxmox deploy.yml -e @../config.yaml
 
 - name: Deploy Esports LAN Infrastructure
   hosts: localhost
   gather_facts: false
-  connection: local
-
+  
   vars:
     # Load from config.yaml via -e @config.yaml
     proxmox_host: "{{ proxmox.host }}"
@@ -16,13 +18,7 @@
     proxmox_api_token_secret: "{{ proxmox.api_token_secret | default('') }}"
     proxmox_node: "{{ proxmox.node }}"
     proxmox_storage: "{{ proxmox.storage }}"
-
-    # Cloud template configuration
-    cloud_template_vmid: 9000
-    cloud_template_name: ubuntu-cloud
-    cloud_image_url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
-    cloud_image_path: /tmp/jammy-server-cloudimg-amd64.img
-
+    
     # VM definitions
     vms:
       - name: pxe-server
@@ -32,7 +28,7 @@
         cores: "{{ resources.pxe_server.cores }}"
         disk: "{{ resources.pxe_server.disk }}"
         role: pxe
-
+        
       - name: lancache-server
         vmid: 101
         ip: "{{ network.lancache_server }}"
@@ -41,7 +37,7 @@
         disk: "{{ resources.lancache_server.disk }}"
         extra_disk: "{{ resources.lancache_server.cache_disk }}"
         role: lancache
-
+        
       - name: file-server
         vmid: 102
         ip: "{{ network.file_server }}"
@@ -50,7 +46,7 @@
         disk: "{{ resources.file_server.disk }}"
         extra_disk: "{{ resources.file_server.data_disk }}"
         role: fileserver
-
+  
   tasks:
     - name: Display deployment information
       debug:
@@ -102,34 +98,33 @@
       pause:
         seconds: 5
       when: not ubuntu_template.stat.exists
-
-    # Phase 1: Clone Ubuntu Cloud Template to Create VMs
-    - name: Clone template to new VMs
-      community.proxmox.proxmox_kvm:
+    
+    # Phase 1: Create VMs in Proxmox
+    - name: Create VMs in Proxmox
+      community.general.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
         api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
         api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
         node: "{{ proxmox_node }}"
-        clone: "{{ cloud_template_name }}"
-        full: yes
         vmid: "{{ item.vmid }}"
         name: "{{ item.name }}"
-        storage: "{{ proxmox_storage }}"
         memory: "{{ item.memory }}"
         cores: "{{ item.cores }}"
         net:
           net0: "virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}"
-        scsi:
-          scsi0: "{{ proxmox_storage }}:{{ item.disk }}"
-        boot: "order=scsi0;net0"
+        virtio:
+          virtio0: "{{ proxmox_storage }}:{{ item.disk }},format=raw"
+        ostype: l26  # Linux 2.6+
         agent: 1
         onboot: yes
         state: present
       loop: "{{ vms }}"
       register: vm_creation
-
+      async: 600
+      poll: 0
+    
     - name: Wait for VM creation to complete
       async_status:
         jid: "{{ item.ansible_job_id }}"
@@ -138,9 +133,9 @@
       retries: 60
       delay: 10
       loop: "{{ vm_creation.results }}"
-
+    
     - name: Add extra data disks to VMs that need them
-      community.proxmox.proxmox_disk:
+      community.general.proxmox_disk:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
@@ -152,25 +147,9 @@
         size: "{{ item.extra_disk }}"
       loop: "{{ vms }}"
       when: item.extra_disk is defined
-
-    - name: Configure cloud-init for cloned VMs
-      community.proxmox.proxmox_kvm:
-        api_host: "{{ proxmox_host }}"
-        api_user: "{{ proxmox_user }}"
-        api_password: "{{ proxmox_password | default(omit) }}"
-        api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
-        api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
-        node: "{{ proxmox_node }}"
-        vmid: "{{ item.vmid }}"
-        ciuser: ansible
-        cipassword: "{{ default_vm_password | default('changeme') }}"
-        ipconfig:
-          ipconfig0: "ip={{ item.ip }}/24,gw={{ network.gateway }}"
-        sshkeys: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
-      loop: "{{ vms }}"
-
+    
     - name: Start VMs
-      community.proxmox.proxmox_kvm:
+      community.general.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
         api_password: "{{ proxmox_password | default(omit) }}"
@@ -180,7 +159,7 @@
         vmid: "{{ item.vmid }}"
         state: started
       loop: "{{ vms }}"
-
+    
     - name: Wait for VMs to be accessible via SSH
       wait_for:
         host: "{{ item.ip }}"
@@ -188,7 +167,7 @@
         timeout: 300
         delay: 30
       loop: "{{ vms }}"
-
+    
     - name: Build dynamic inventory for next plays
       add_host:
         name: "{{ item.ip }}"
@@ -197,7 +176,7 @@
         ansible_become: yes
       loop: "{{ vms }}"
       changed_when: false
-      
+
 # Phase 2: Configure PXE Server
 - name: Configure PXE/DHCP Server
   hosts: pxe
