@@ -67,26 +67,17 @@
           - ""
 
         # Phase 0: Ensure Ubuntu Cloud Template Exists
-    - name: Check if Ubuntu cloud template exists
-      community.proxmox.proxmox_vm_info:
-        api_host: "{{ proxmox_host }}"
-        api_user: "{{ proxmox_user }}"
-        api_password: "{{ proxmox_password | default(omit) }}"
-        api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
-        api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
-        node: "{{ proxmox_node }}"
-      register: proxmox_info
-
-    - name: Debug VM info
-      debug:
-        var: proxmox_info
+    - name: Check if ubuntu-cloud template exists
+      stat:
+        path: /etc/pve/qemu-server/9000.conf
+      register: ubuntu_template
 
     - name: Download Ubuntu 22.04 cloud image
       get_url:
         url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
         dest: /tmp/jammy-server-cloudimg-amd64.img
         mode: '0644'
-      when: "'ubuntu-cloud' not in (proxmox_info.data | map(attribute='name') | list)"
+      when: not ubuntu_template.stat.exists
 
     - name: Create Ubuntu Cloud Template if missing
       ansible.builtin.shell: |
@@ -101,7 +92,8 @@
         qm template 9000
       args:
         creates: /etc/pve/qemu-server/9000.conf
-      when: "'ubuntu-cloud' not in (proxmox_info.data | map(attribute='name') | list)"
+      when: not ubuntu_template.stat.exists
+
     
     # Phase 1: Create VMs in Proxmox
     - name: Clone Ubuntu Cloud Template to Create VMs
