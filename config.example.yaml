@@ -1,243 +1,93 @@
-# Esports LAN Infrastructure Configuration
-# Copy this file to config.yaml and customize for your organization
+# Esports LAN Infrastructure - Simple Configuration
+# Version 2.0 - Streamlined for single-server deployments
 
-# Organization Information
+# Organization Details
 organization:
   name: "Your School Esports"
-  short_name: "YSE" # Used in computer names, profile paths, etc.
-  contact_email: "esports@yourschool.edu"
+  short_name: "YSE"
+
+# Proxmox Server Connection
+proxmox:
+  host: "192.168.1.5"              # Use IP address, not hostname
+  user: "root@pam"                 # Standard Proxmox user
+  password: ""                     # Fill this in, or use API token below
+  
+  # Alternative: API Token (more secure)
+  # Create in Proxmox UI: Datacenter → Permissions → API Tokens
+  api_token_id: ""                 # Format: user@realm!tokenname
+  api_token_secret: ""             # The secret shown once
+  
+  node: "pve"                      # Your Proxmox node name
+  storage: "local-lvm"             # Storage pool for VM disks
 
 # Network Configuration
 network:
-  # IP addresses for infrastructure VMs
-  ipxe_server_ip: "192.168.1.10"
-  lancache_server_ip: "192.168.1.11"
-  file_server_ip: "192.168.1.12"
-  # Optional: management IP for Proxmox host (preferred over hostname)
-  # proxmox_ip: "192.168.1.5"
-
-  # Network settings
   subnet: "192.168.1.0/24"
   gateway: "192.168.1.1"
-  dns_primary: "8.8.8.8"
-  dns_secondary: "8.8.4.4"
+  
+  # Infrastructure Server IPs (must be outside DHCP range)
+  pxe_server: "192.168.1.10"
+  lancache_server: "192.168.1.11"
+  file_server: "192.168.1.12"
+  
+  # DHCP Range for Client PCs
+  dhcp_start: "192.168.1.100"
+  dhcp_end: "192.168.1.254"
+  
+  # DNS (LANCache will be primary, this is fallback)
+  dns_fallback: "8.8.8.8"
 
-  # DHCP range for client machines
-  dhcp_range_start: "192.168.1.100"
-  dhcp_range_end: "192.168.1.254"
-
-  # VLAN (optional - set to null if not using VLANs)
-  vlan_id: null # e.g., 100 for VLAN 100
-
-# Proxmox Configuration
-proxmox:
-  # Proxmox host details
-  host: "proxmox.local"
-  node_name: "pve" # Default Proxmox node name
-  api_token_id: "" # Proxmox API token secret (set during deployment or use prompt)
-  api_token_secret: ""
-
-  # Storage pools
-  vm_storage: "local-lvm" # Storage for VM disks
-  iso_storage: "local" # Storage for ISOs
-  backup_storage: "local" # Storage for backups
-
-  # VM Bridge
-  network_bridge: "vmbr0"
-
-  # Optional: Public URL of the Ubuntu cloud image to use when creating a cloud-init
-  # template on Proxmox. If left empty or omitted, the deployment scripts will
-  # default to the official Ubuntu Jammy cloud image URL (Ubuntu 22.04 LTS).
-  # Example:
-  #   ubuntu_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
-  ubuntu_image_url: ""
-
-  # OPTION A: Use cloud-init template (RECOMMENDED for automated deployment)
-  # Leave ubuntu_iso commented out to use cloud-init template
-  # The deploy script will automatically create the template with validation
-
-  # OPTION B: Use Ubuntu Server ISO (FALLBACK - requires manual installation or autoinstall config)
-  # Only use this if cloud-init template creation fails repeatedly
-  # ubuntu_iso: "local:iso/ubuntu-24.04.3-live-server-amd64.iso"
-
-# Virtual Machine Resource Allocation
-vms:
-  ipxe_server:
+# VM Resource Allocation
+# Adjust based on your server's capacity
+resources:
+  pxe_server:
+    memory: 2048          # MB (2GB)
     cores: 2
-    memory: 2048 # MB
-    disk_size: 32 # GB
-
+    disk: 32              # GB
+  
   lancache_server:
+    memory: 16384         # MB (16GB)
     cores: 4
-    memory: 16384 # MB
-    disk_size: 500 # GB (OS + cache metadata)
-    cache_disk_size: 30000 # GB (30TB for game cache)
-
+    disk: 500             # GB for OS
+    cache_disk: 30000     # GB (30TB) for game cache
+  
   file_server:
+    memory: 8192          # MB (8GB)
     cores: 4
-    memory: 8192 # MB
-    disk_size: 100 # GB (OS)
-    data_disk_size: 5000 # GB (5TB for user profiles)
+    disk: 100             # GB for OS
+    data_disk: 5000       # GB (5TB) for user profiles
 
-  windows_builder:
-    cores: 4
-    memory: 16384 # MB
-    disk_size: 200 # GB (temporary - can be deleted after image creation)
-
-# Game Configuration
+# Game Platforms to Cache
 games:
-  # Which games to pre-cache on LANCache
-  # Game clients will be installed in the Windows image
-  enabled:
-    - fortnite
-    - rocket_league
-    - valorant
-    - league_of_legends
-    - overwatch2
-    - marvel_rivals
-    # Add more games as needed:
-    # - overcooked2
-    # - csgo
-    # - minecraft
+  steam: true
+  epic: true
+  riot: true
+  battlenet: false        # Enable if needed
 
-  # Game client installation
-  clients:
-    steam:
-      enabled: true
-      auto_login: false # Don't auto-login, users will login themselves
-
-    epic_games:
-      enabled: true
-
-    riot_client:
-      enabled: true
-
-    battle_net:
-      enabled: false # Enable if you need Overwatch, etc.
-
-# Communication Software
-communication:
-  discord:
-    enabled: true
-
-  teamspeak3:
-    enabled: true
-
-  teamspeak6:
-    enabled: true # New TeamSpeak client
-
-# Windows Configuration
-windows:
-  version: "11"
-  edition: "Pro" # Pro or Enterprise
-
-  # Local administrator account (for troubleshooting)
-  admin_username: "esportsadmin"
-  admin_password_hash: "" # Set during deployment, or use prompt
-
-  # Client machine settings
-  computer_name_prefix: "ESPORTS" # Will create ESPORTS-001, ESPORTS-002, etc.
-
-  # Disk configuration for client machines
-  local_disk:
-    games_partition_size: 1800 # GB (leave some space for OS/profiles)
-    games_partition_letter: "G" # G: drive for games
-
-  # Windows updates
-  windows_update:
-    enabled: false # Disable automatic updates during events
-
-  # Performance optimizations
-  optimizations:
-    disable_cortana: true
-    disable_telemetry: true
-    disable_windows_search_indexing: false # Keep enabled for user experience
-    gaming_mode: true
-    high_performance_power_plan: true
-
-# User Profile Configuration
+# User Profile Settings
 profiles:
-  # Roaming profile settings
-  roaming_profiles:
-    enabled: true
-    path: "\\\\${file_server_ip}\\profiles"
+  max_size_gb: 2          # Maximum profile size per user
+  quota_warning: true     # Warn users when approaching limit
 
-  # Profile size management
-  max_profile_size_mb: 2048 # 2GB max per user profile
+# Optional: Pre-create user accounts
+# Leave empty to create manually after deployment
+users: []
+  # - username: player001
+  #   password: changeme
+  # - username: player002
+  #   password: changeme
 
-  # Redirect folders to local disk for performance
-  folder_redirection:
-    documents: "G:\\UserData\\Documents"
-    downloads: "G:\\UserData\\Downloads"
-    videos: "G:\\UserData\\Videos"
-    pictures: "G:\\UserData\\Pictures"
-
-# Branding (Stretch Goal)
-branding:
-  wallpaper:
-    enabled: false # Set to true when you have a custom wallpaper
-    path: "branding/wallpaper.jpg" # Place your wallpaper here
-
-  lock_screen:
-    enabled: false
-    path: "branding/lockscreen.jpg"
-
-  organization_logo:
-    enabled: false
-    path: "branding/logo.png"
-
-# Security Settings
-security:
-  # Restrict user permissions
-  disable_control_panel: true
-  disable_task_manager: false
-  disable_registry_editor: true
-  disable_cmd: false
-
-  # Network security
-  firewall:
-    enabled: true
-    allow_ping: true
-
-  # USB/External devices
-  block_usb_storage: false # Set true to prevent USB drive usage
-
-# Backup Configuration
-backup:
-  enabled: true
-  schedule: "daily" # daily, weekly, monthly
-  retention_days: 30
-  backup_path: "/mnt/backups"
-
-# Monitoring and Logging
-monitoring:
-  enabled: true
-
-  # Log collection
-  syslog_server: null # Set IP if you have a syslog server
-
-  # Performance monitoring
-  prometheus:
-    enabled: false
-
-  grafana:
-    enabled: false
-
-# Advanced Options
+# Advanced Settings (usually don't need to change)
 advanced:
-  # Enable if you have multiple Proxmox nodes for HA
-  high_availability:
-    enabled: false
-    nodes:
-      - "pve1"
-      - "pve2"
-
-  # PXE boot options
-  pxe:
-    timeout_seconds: 5 # How long to wait at boot menu
-    default_boot: "windows" # windows or local
-
-  # LANCache options
-  lancache:
-    prefill_enabled: false # Automatically download games before event
-    prefill_schedule: "0 2 * * *" # Cron format: 2 AM daily
+  ssh_key_path: "~/.ssh/id_rsa.pub"  # SSH key for VM access
+  timezone: "America/New_York"
+  
+  # Network bridge on Proxmox
+  network_bridge: "vmbr0"
+  
+  # Enable if using VLANs
+  vlan_id: null           # e.g., 100
+  
+  # Deployment options
+  parallel_deploy: true   # Deploy all VMs simultaneously
+  skip_updates: false     # Skip apt updates for faster deploy (not recommended)
