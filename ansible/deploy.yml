@@ -65,9 +65,41 @@
           - ""
           - "This will take 15-20 minutes..."
           - ""
+
+        # Phase 0: Ensure Ubuntu Cloud Template Exists
+    - name: Check if Ubuntu cloud template exists
+      community.general.proxmox_kvm_info:
+        api_host: "{{ proxmox_host }}"
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_password | default(omit) }}"
+        api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
+        api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
+      register: proxmox_info
+
+    - name: Download Ubuntu 22.04 cloud image
+      get_url:
+        url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+        dest: /tmp/jammy-server-cloudimg-amd64.img
+        mode: '0644'
+      when: "'ubuntu-cloud' not in (proxmox_info.vms | map(attribute='name') | list)"
+
+    - name: Create Ubuntu Cloud Template if missing
+      ansible.builtin.shell: |
+        set -e
+        qm create 9000 --name ubuntu-cloud --memory 2048 --cores 2 --net0 virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}
+        qm importdisk 9000 /tmp/jammy-server-cloudimg-amd64.img {{ proxmox_storage }}
+        qm set 9000 --scsihw virtio-scsi-pci --scsi0 {{ proxmox_storage }}:vm-9000-disk-0
+        qm set 9000 --ide2 {{ proxmox_storage }}:cloudinit
+        qm set 9000 --boot c --bootdisk scsi0
+        qm set 9000 --serial0 socket --vga serial0
+        qm set 9000 --agent enabled=1
+        qm template 9000
+      args:
+        creates: /etc/pve/qemu-server/9000.conf
+      when: "'ubuntu-cloud' not in (proxmox_info.vms | map(attribute='name') | list)"
     
     # Phase 1: Create VMs in Proxmox
-    - name: Create VMs in Proxmox
+    - name: Clone Ubuntu Cloud Template to Create VMs
       community.general.proxmox_kvm:
         api_host: "{{ proxmox_host }}"
         api_user: "{{ proxmox_user }}"
@@ -75,22 +107,24 @@
         api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
         api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
         node: "{{ proxmox_node }}"
+        clone: "ubuntu-cloud"
+        full: yes
         vmid: "{{ item.vmid }}"
         name: "{{ item.name }}"
+        storage: "{{ proxmox_storage }}"
         memory: "{{ item.memory }}"
         cores: "{{ item.cores }}"
         net:
           net0: "virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}"
-        virtio:
-          virtio0: "{{ proxmox_storage }}:{{ item.disk }},format=raw"
-        ostype: l26  # Linux 2.6+
+        scsi:
+          scsi0: "{{ proxmox_storage }}:{{ item.disk }}"
+        boot: "order=scsi0;net0"
         agent: 1
         onboot: yes
         state: present
       loop: "{{ vms }}"
       register: vm_creation
-      async: 600
-      poll: 0
+
     
     - name: Wait for VM creation to complete
       async_status:
@@ -114,6 +148,23 @@
         size: "{{ item.extra_disk }}"
       loop: "{{ vms }}"
       when: item.extra_disk is defined
+
+    - name: Configure cloud-init for cloned VMs
+      community.general.proxmox_kvm:
+        api_host: "{{ proxmox_host }}"
+        api_user: "{{ proxmox_user }}"
+        api_password: "{{ proxmox_password | default(omit) }}"
+        api_token_id: "{{ proxmox_api_token_id | default(omit) }}"
+        api_token_secret: "{{ proxmox_api_token_secret | default(omit) }}"
+        node: "{{ proxmox_node }}"
+        vmid: "{{ item.vmid }}"
+        ciuser: ansible
+        cipassword: "{{ default_vm_password | default('changeme') }}"
+        ipconfig:
+          ipconfig0: "ip={{ item.ip }}/24,gw={{ network.gateway }}"
+        sshkeys: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+      loop: "{{ vms }}"
+
     
     - name: Start VMs
       community.general.proxmox_kvm:
