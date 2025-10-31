@@ -131,15 +131,16 @@
       register: vm_creation
       async: 600
       poll: 0
+      delay: 10
     
-    # - name: Wait for VM creation to complete
-    #   async_status:
-    #     jid: "{{ item.ansible_job_id }}"
-    #   register: vm_jobs
-    #   until: vm_jobs.finished
-    #   retries: 60
-    #   delay: 10
-    #   loop: "{{ vm_creation.results }}"
+    - name: Wait for VM creation to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: vm_jobs
+      until: vm_jobs.finished
+      retries: 60
+      delay: 10
+      loop: "{{ vm_creation.results }}"
     
     - name: Add extra data disks to VMs that need them
       community.general.proxmox_disk:
