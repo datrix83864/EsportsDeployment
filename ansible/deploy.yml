@@ -82,7 +82,7 @@
         url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
         dest: /tmp/jammy-server-cloudimg-amd64.img
         mode: '0644'
-      when: "'ubuntu-cloud' not in (proxmox_info.vms | map(attribute='name') | list)"
+      when: "'ubuntu-cloud' not in (proxmox_info.data | map(attribute='name') | list)"
 
     - name: Create Ubuntu Cloud Template if missing
       ansible.builtin.shell: |
@@ -97,7 +97,7 @@
         qm template 9000
       args:
         creates: /etc/pve/qemu-server/9000.conf
-      when: "'ubuntu-cloud' not in (proxmox_info.vms | map(attribute='name') | list)"
+      when: "'ubuntu-cloud' not in (proxmox_info.data | map(attribute='name') | list)"
     
     # Phase 1: Create VMs in Proxmox
     - name: Clone Ubuntu Cloud Template to Create VMs
