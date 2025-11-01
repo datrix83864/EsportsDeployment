@@ -229,7 +229,6 @@
       shell: |
         ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }} "sudo apt-get update && sudo apt-get install -y qemu-guest-agent && sudo systemctl enable --now qemu-guest-agent"
       loop: "{{ vms }}"
-      when: ssh_test is succeeded
       ignore_errors: true
     
     - name: Build dynamic inventory for next plays
