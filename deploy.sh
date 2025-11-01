@@ -202,7 +202,7 @@ ensure_ssh_keys() {
     
     # Verify public key exists
     if [[ ! -f "${ssh_key_path}" ]]; then
-        log_error "Public key not found at ${ssh_key_path}.pub"
+        log_error "Public key not found at ${ssh_key_path}"
         return 1
     fi
     

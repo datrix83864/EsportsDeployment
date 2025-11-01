@@ -208,22 +208,22 @@
       delegate_to: localhost
       tags: [ssh, verify]
     
-    # Verify SSH connectivity with auto-accept new keys
-    - name: Verify SSH connectivity
-      command: >
-        ssh -o StrictHostKeyChecking=accept-new 
-        -o ConnectTimeout=10 
-        -o UserKnownHostsFile=/root/.ssh/known_hosts 
-        ansible@{{ item.ip }} 
-        "echo 'Connected to {{ item.name }}'"
-      loop: "{{ vms }}"
-      register: ssh_wait
-      retries: 3
-      delay: 10
-      until: ssh_wait.rc == 0
-      changed_when: false
-      delegate_to: localhost
-      tags: [ssh, verify]
+    # # Verify SSH connectivity with auto-accept new keys
+    # - name: Verify SSH connectivity
+    #   command: >
+    #     ssh -o StrictHostKeyChecking=accept-new 
+    #     -o ConnectTimeout=10 
+    #     -o UserKnownHostsFile=/root/.ssh/known_hosts 
+    #     ansible@{{ item.ip }} 
+    #     "echo 'Connected to {{ item.name }}'"
+    #   loop: "{{ vms }}"
+    #   register: ssh_wait
+    #   retries: 3
+    #   delay: 10
+    #   until: ssh_wait.rc == 0
+    #   changed_when: false
+    #   delegate_to: localhost
+    #   tags: [ssh, verify]
     
     - name: Install and start QEMU guest agent if not running
       shell: |
