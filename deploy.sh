@@ -206,7 +206,7 @@ ensure_ssh_keys() {
         return 1
     fi
     
-    log_info "Public key: $(cat ${ssh_key_path}.pub | cut -d' ' -f1-2)..."
+    log_info "Public key: $(cat ${ssh_key_path} | cut -d' ' -f1-2)..."
 }
 
 # Validate configuration
