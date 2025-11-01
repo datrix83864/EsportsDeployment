@@ -126,19 +126,14 @@
         qm resize {{ item.vmid }} scsi0 {{ item.disk }}G
         
         # Configure cloud-init with static IP
-        qm set {{ item.vmid }} --ipconfig0 "ip={{ item.ip }}/{{ network.subnet.split('/')[-1] }},gw={{ network.gateway }}"
+        qm set {{ item.vmid }} --ipconfig0 "ip={{ item.ip }}/24,gw={{ network.gateway }}"
         
         # Set nameservers
-        qm set {{ item.vmid }} --nameserver "{{ network.dns_primary }} {{ network.dns_secondary | default('8.8.8.8') }}"
-        
-        # Set SSH key if provided
-        {% if ssh_public_key is defined %}
-        qm set {{ item.vmid }} --sshkeys "{{ ssh_public_key | urlencode }}"
-        {% endif %}
+        qm set {{ item.vmid }} --nameserver "8.8.8.8 8.8.4.4"
         
         # Set cloud-init user
         qm set {{ item.vmid }} --ciuser ansible
-        qm set {{ item.vmid }} --cipassword "{{ ansible_password | default('changeme') }}"
+        qm set {{ item.vmid }} --cipassword changeme
         
         # Enable start on boot
         qm set {{ item.vmid }} --onboot 1
