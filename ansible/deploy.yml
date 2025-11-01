@@ -23,6 +23,7 @@
     cloud_image_url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
     cloud_image_path: /tmp/jammy-server-cloudimg-amd64.img
     network: "{{ network }}"
+    ssh_public_key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_rsa.pub') }}"
     
     # VM definitions
     vms:
@@ -52,6 +53,17 @@
         extra_disk: "{{ resources.file_server.data_disk }}"
         role: fileserver
   
+  pre_tasks:
+    - name: Verify SSH key exists
+      stat:
+        path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+      register: ssh_key_check
+      failed_when: not ssh_key_check.stat.exists
+      
+    - name: Display SSH key status
+      debug:
+        msg: "SSH key found: {{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+
   tasks:
     - name: Display deployment information
       debug:
@@ -134,6 +146,9 @@
         # Set cloud-init user
         qm set {{ item.vmid }} --ciuser ansible
         qm set {{ item.vmid }} --cipassword changeme
+
+        # Add SSH public key
+        qm set {{ item.vmid }} --sshkey "{{ ssh_public_key | replace('\n', '') }}"
         
         # Enable start on boot
         qm set {{ item.vmid }} --onboot 1

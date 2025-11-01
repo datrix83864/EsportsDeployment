@@ -177,6 +177,33 @@ preflight_checks() {
     fi
 }
 
+# Ensure SSH keys exist
+ensure_ssh_keys() {
+    log_step "Checking SSH Keys"
+    
+    local ssh_key_path=$(python3 -c "import yaml, os; cfg=yaml.safe_load(open('$CONFIG_FILE')); print(os.path.expanduser(cfg.get('advanced', {}).get('ssh_key_path', '~/.ssh/id_rsa')))" 2>/dev/null || echo "~/.ssh/id_rsa")
+    ssh_key_path=$(eval echo "$ssh_key_path")
+    
+    if [[ ! -f "$ssh_key_path" ]]; then
+        log_warning "SSH key not found at $ssh_key_path"
+        log_info "Generating SSH key pair..."
+        
+        ssh-keygen -t rsa -b 4096 -f "$ssh_key_path" -N "" -C "esports-lan-deployment"
+        
+        log_success "SSH key generated at $ssh_key_path"
+    else
+        log_success "SSH key found at $ssh_key_path"
+    fi
+    
+    # Verify public key exists
+    if [[ ! -f "${ssh_key_path}.pub" ]]; then
+        log_error "Public key not found at ${ssh_key_path}.pub"
+        return 1
+    fi
+    
+    log_info "Public key: $(cat ${ssh_key_path}.pub | cut -d' ' -f1-2)..."
+}
+
 # Validate configuration
 validate_config() {
     log_step "Validating Configuration"
@@ -381,6 +408,12 @@ main() {
     # Run pre-flight checks
     if ! preflight_checks; then
         log_error "Pre-flight checks failed. Please fix the issues above."
+        exit 1
+    fi
+
+    # Ensure SSH keys exist
+    if ! ensure_ssh_keys; then
+        log_error "SSH key setup failed"
         exit 1
     fi
     
