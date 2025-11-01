@@ -163,8 +163,13 @@ preflight_checks() {
         log_success "SSH key found at $ssh_key_path"
     else
         log_warning "SSH key not found at $ssh_key_path"
-        log_info "  Generate one: ssh-keygen -t rsa -b 4096"
-        log_info "  Or update ssh_key_path in config.yaml"
+        # Check if SSH key exists
+        if [[ ! -f ~/.ssh/id_rsa ]]; then
+            ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+        fi
+        log_info "Generating public key..."
+        ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub
+        log_success "SSH public key generated at ~/.ssh/id_rsa.pub"
     fi
     
     echo ""
