@@ -172,27 +172,43 @@
       debug:
         msg: "{{ vm_network_check.results }}"
     
-    - name: Wait for VMs to be accessible via SSH (extended timeout)
+    # Clean up old SSH keys (prevents "host key changed" errors)
+    - name: Remove old SSH host keys for all VMs
+      command: ssh-keygen -f "/root/.ssh/known_hosts" -R "{{ item.ip }}"
+      loop: "{{ vms }}"
+      delegate_to: localhost
+      changed_when: false
+      failed_when: false
+      tags: [ssh, cleanup]
+    
+    # Wait for SSH to be ready
+    - name: Wait for SSH to become available
       wait_for:
         host: "{{ item.ip }}"
         port: 22
-        timeout: 600
-        delay: 60
-        sleep: 10
+        delay: 10
+        timeout: 300
+        state: started
+      loop: "{{ vms }}"
+      delegate_to: localhost
+      tags: [ssh, verify]
+    
+    # Verify SSH connectivity with auto-accept new keys
+    - name: Verify SSH connectivity
+      command: >
+        ssh -o StrictHostKeyChecking=accept-new 
+        -o ConnectTimeout=10 
+        -o UserKnownHostsFile=/root/.ssh/known_hosts 
+        ansible@{{ item.ip }} 
+        "echo 'Connected to {{ item.name }}'"
       loop: "{{ vms }}"
       register: ssh_wait
       retries: 3
-      delay: 30
-      until: ssh_wait is succeeded
-    
-    - name: Verify SSH connectivity
-      shell: |
-        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ansible@{{ item.ip }} "echo 'Connected to {{ item.name }}'"
-      loop: "{{ vms }}"
-      register: ssh_test
-      retries: 3
       delay: 10
-      until: ssh_test.rc == 0
+      until: ssh_wait.rc == 0
+      changed_when: false
+      delegate_to: localhost
+      tags: [ssh, verify]
     
     - name: Install and start QEMU guest agent if not running
       shell: |
