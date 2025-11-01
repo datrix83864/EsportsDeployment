@@ -7,19 +7,23 @@
 
 - name: Provision VMs on Proxmox
   import_playbook: provision.yml
+  tags: ['provision']
 
 # Phase 2: Configure PXE Server
 
 - name: Configure PXE Server
   import_playbook: pxe.yml
+  tags: ['pxe']
 
 # Phase 3: Configure LANCache Server
 - name: Configure LANCache Server
   import_playbook: lancache.yml
+  tags: ['lancache']
 
 # Phase 4: Configure File Server
 - name: Configure File Server
   import_playbook: fileserver.yml
+  tags: ['fileserver']
 
 # Phase 5: Verification
 - name: Verify Deployment
