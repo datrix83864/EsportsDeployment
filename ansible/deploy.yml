@@ -155,9 +155,9 @@
         qm start {{ item.vmid }}
       loop: "{{ vms }}"
     
-    - name: Wait for cloud-init to complete (this takes 3-5 minutes)
+    - name: Wait for cloud-init to complete (this takes 10 minutes)
       pause:
-        minutes: 3
+        minutes: 10
         prompt: "Waiting for cloud-init to configure VMs and install QEMU guest agent..."
     
     - name: Check VM status and IP addresses
