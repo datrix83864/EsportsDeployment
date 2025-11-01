@@ -232,7 +232,7 @@
       shell: |
         ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }} "sudo apt-get update && sudo apt-get install -y qemu-guest-agent && sudo systemctl enable --now qemu-guest-agent"
       loop: "{{ vms }}"
-      when: ssh_test is succeeded
+      when: ssh_check is succeeded
       ignore_errors: true
     
     - name: Build dynamic inventory for next plays
@@ -258,17 +258,54 @@
         network_config: "{{ network }}"
 
 # Phase 3: Configure LANCache Server
-- name: Configure LANCache Server
-  hosts: lancache
-  become: yes
-  gather_facts: yes
-  
-  roles:
-    - role: lancache
-      vars:
-        org_name: "{{ organization.name }}"
-        network_config: "{{ network }}"
-        games_config: "{{ games }}"
+- name: Configure Lancache server
+  hosts: localhost
+  become: true
+  vars:
+    lancache_ip: "{{ item.ip }}"
+  loop: "{{ vms | selectattr('role', 'equalto', 'lancache') | list }}"
+  tasks:
+    - name: Install Docker on Lancache VM
+      shell: >
+        ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }}
+        "sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg lsb-release &&
+          sudo mkdir -p /etc/apt/keyrings &&
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg &&
+          echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg]
+          https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' |
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null &&
+          sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
+
+    - name: Create Lancache docker-compose file
+      shell: >
+        ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }}
+        "mkdir -p ~/lancache && cat > ~/lancache/docker-compose.yml <<'EOF'
+        version: '3'
+        services:
+          dns:
+            image: lancachenet/lancache-dns:latest
+            ports:
+              - 53:53/udp
+            environment:
+              - USE_GENERIC_CACHE=true
+              - LANCACHE_IP={{ item.ip }}
+            restart: unless-stopped
+          cache:
+            image: lancachenet/monolithic:latest
+            ports:
+              - 80:80
+            volumes:
+              - /srv/cache:/data/cache
+            environment:
+              - CACHE_DISK_SIZE=1000g
+            restart: unless-stopped
+        EOF"
+
+    - name: Start Lancache with Docker Compose
+      shell: >
+        ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }}
+        "cd ~/lancache && sudo docker compose up -d"
+  tags: ['lancache']
 
 # Phase 4: Configure File Server
 - name: Configure File Server
