@@ -1,0 +1,6 @@
+- name: Install and start QEMU guest agent if not running
+  shell: |
+    ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }} "sudo apt-get update && sudo apt-get install -y qemu-guest-agent && sudo systemctl enable --now qemu-guest-agent"
+  loop: "{{ vms }}"
+  when: ssh_check is succeeded
+  ignore_errors: true

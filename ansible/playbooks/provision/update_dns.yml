@@ -1,0 +1,29 @@
+- name: Ensure proper DNS configuration on all provisioned VMs
+  hosts: all   # use the dynamic inventory groups created earlier
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Check current netplan file
+      stat:
+        path: /etc/netplan/00-cloud-init.yaml
+      register: netplan_file
+
+    - name: Update netplan DNS configuration
+      lineinfile:
+        path: /etc/netplan/00-cloud-init.yaml
+        regexp: 'nameservers:'
+        line: '        nameservers: { addresses: [8.8.8.8, 8.8.4.4] }'
+      when: netplan_file.stat.exists
+
+    - name: Apply netplan
+      command: netplan apply
+
+    - name: Test DNS resolution
+      command: ping -c 1 google.com
+      register: ping_test
+      ignore_errors: true
+
+    - name: Display DNS test result
+      debug:
+        msg: "Ping test: {{ ping_test.stdout }}"

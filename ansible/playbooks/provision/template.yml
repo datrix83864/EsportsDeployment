@@ -1,0 +1,34 @@
+- name: Check if ubuntu-cloud template exists
+  delegate_to: "{{ proxmox_host }}"
+  stat:
+    path: "/etc/pve/qemu-server/{{ cloud_template_vmid }}.conf"
+  register: ubuntu_template
+
+- name: Download Ubuntu 22.04 cloud image
+  delegate_to: "{{ proxmox_host }}"
+  get_url:
+    url: "{{ cloud_image_url }}"
+    dest: "{{ cloud_image_path }}"
+    mode: '0644'
+  when: not ubuntu_template.stat.exists
+
+- name: Create Ubuntu Cloud Template if missing
+  delegate_to: "{{ proxmox_host }}"
+  shell: |
+    set -e
+    qm create {{ cloud_template_vmid }} --name {{ cloud_template_name }} --memory 2048 --cores 2 --net0 virtio,bridge={{ advanced.network_bridge | default('vmbr0') }}
+    qm importdisk {{ cloud_template_vmid }} {{ cloud_image_path }} {{ proxmox_storage }}
+    qm set {{ cloud_template_vmid }} --scsihw virtio-scsi-pci --scsi0 {{ proxmox_storage }}:vm-{{ cloud_template_vmid }}-disk-0
+    qm set {{ cloud_template_vmid }} --ide2 {{ proxmox_storage }}:cloudinit
+    qm set {{ cloud_template_vmid }} --boot c --bootdisk scsi0
+    qm set {{ cloud_template_vmid }} --serial0 socket --vga serial0
+    qm set {{ cloud_template_vmid }} --agent enabled=1
+    qm template {{ cloud_template_vmid }}
+  args:
+    creates: "/etc/pve/qemu-server/{{ cloud_template_vmid }}.conf"
+  when: not ubuntu_template.stat.exists
+
+- name: Wait for Proxmox to register template
+  pause:
+    seconds: 5
+  when: not ubuntu_template.stat.exists

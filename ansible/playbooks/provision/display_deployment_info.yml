@@ -1,0 +1,17 @@
+- name: Display deployment information
+  debug:
+    msg:
+      - "╔═══════════════════════════════════════════════════════╗"
+      - "║  Deploying {{ organization.name }} Infrastructure"
+      - "╚═══════════════════════════════════════════════════════╝"
+      - ""
+      - "Proxmox: {{ proxmox_host }} ({{ proxmox_node }})"
+      - "Network: {{ network.subnet }}"
+      - ""
+      - "Creating 3 VMs:"
+      - "  • PXE Server:   {{ network.pxe_server }}"
+      - "  • LANCache:     {{ network.lancache_server }}"
+      - "  • File Server:  {{ network.file_server }}"
+      - ""
+      - "This will take 15-20 minutes..."
+      - ""

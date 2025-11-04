@@ -1,0 +1,9 @@
+- name: Build dynamic inventory for next plays
+  add_host:
+    name: "{{ item.ip }}"
+    groups: "{{ item.role }}"
+    ansible_user: ansible
+    ansible_become: yes
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+  loop: "{{ vms }}"
+  changed_when: false
