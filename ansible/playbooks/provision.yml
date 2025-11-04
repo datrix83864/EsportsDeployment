@@ -1,34 +1,31 @@
 - name: Deploy Esports LAN Infrastructure
   hosts: localhost
   gather_facts: false
-  
+
+  vars_files:
+    - ../config.yaml
+
   pre_tasks:
     - name: Verify SSH key exists
       stat:
-        path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+        path: "{{ lookup('env','HOME') }}/.ssh/id_rsa.pub"
       register: ssh_key_check
       failed_when: not ssh_key_check.stat.exists
-      
+
     - name: Display SSH key status
       debug:
-        msg: "SSH key found: {{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+        msg: "SSH key found: {{ lookup('env','HOME') }}/.ssh/id_rsa.pub"
+
   tasks:
-    - set_fact:
-        proxmox_host: "{{ proxmox.host }}"
-        proxmox_user: "{{ proxmox.user | default('root@pam') }}"
-        proxmox_password: "{{ proxmox.password | default('') }}"
-        proxmox_api_token_id: "{{ proxmox.api_token_id | default('') }}"
-        proxmox_api_token_secret: "{{ proxmox.api_token_secret | default('') }}"
-        proxmox_node: "{{ proxmox.node }}"
-        proxmox_storage: "{{ proxmox.storage }}"
+    - name: Set VM facts for this run
+      set_fact:
         cloud_template_name: "ubuntu-cloud"
         cloud_template_vmid: 105
         cloud_image_url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
         cloud_image_path: /tmp/jammy-server-cloudimg-amd64.img
-        network: "{{ network }}"
-        ssh_public_key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_rsa.pub') }}"
-        
-        # VM definitions
+        ssh_public_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
+
+        # VM definitions (can also be pulled from config.yaml)
         vms:
           - name: pxe-server
             vmid: 100
@@ -37,7 +34,7 @@
             cores: "{{ resources.pxe_server.cores }}"
             disk: "{{ resources.pxe_server.disk }}"
             role: pxe
-            
+
           - name: lancache-server
             vmid: 101
             ip: "{{ network.lancache_server }}"
@@ -46,7 +43,7 @@
             disk: "{{ resources.lancache_server.disk }}"
             extra_disk: "{{ resources.lancache_server.cache_disk }}"
             role: lancache
-            
+
           - name: file-server
             vmid: 102
             ip: "{{ network.file_server }}"
@@ -56,61 +53,11 @@
             extra_disk: "{{ resources.file_server.data_disk }}"
             role: fileserver
 
-
+# Imported playbooks
 - import_playbook: provision/display_deployment_info.yml
-  vars:
-    organization: "{{ hostvars['localhost']['organization'] }}"
-    proxmox_host: "{{ hostvars['localhost']['proxmox_host'] }}"
-    proxmox_node: "{{ hostvars['localhost']['proxmox_node'] }}"
-    network: "{{ hostvars['localhost']['network'] }}"
-
 - import_playbook: provision/template.yml
-  vars:
-    proxmox_host: "{{ hostvars['localhost']['proxmox_host'] }}"
-    proxmox_user: "{{ hostvars['localhost']['proxmox_user'] }}"
-    proxmox_password: "{{ hostvars['localhost']['proxmox_password'] }}"
-    proxmox_api_token_id: "{{ hostvars['localhost']['proxmox_api_token_id'] }}"
-    proxmox_api_token_secret: "{{ hostvars['localhost']['proxmox_api_token_secret'] }}"
-    proxmox_node: "{{ hostvars['localhost']['proxmox_node'] }}"
-    proxmox_storage: "{{ hostvars['localhost']['proxmox_storage'] }}"
-    cloud_template_name: "{{ hostvars['localhost']['cloud_template_name'] }}"
-    cloud_template_vmid: "{{ hostvars['localhost']['cloud_template_vmid'] }}"
-    cloud_image_url: "{{ hostvars['localhost']['cloud_image_url'] }}"
-    cloud_image_path: "{{ hostvars['localhost']['cloud_image_path'] }}"
-    network: "{{ hostvars['localhost']['network'] }}"
-
 - import_playbook: provision/clone_vms.yml
-  vars:
-    proxmox_host: "{{ hostvars['localhost']['proxmox_host'] }}"
-    proxmox_user: "{{ hostvars['localhost']['proxmox_user'] }}"
-    proxmox_password: "{{ hostvars['localhost']['proxmox_password'] }}"
-    proxmox_api_token_id: "{{ hostvars['localhost']['proxmox_api_token_id'] }}"
-    proxmox_api_token_secret: "{{ hostvars['localhost']['proxmox_api_token_secret'] }}"
-    proxmox_node: "{{ hostvars['localhost']['proxmox_node'] }}"
-    proxmox_storage: "{{ hostvars['localhost']['proxmox_storage'] }}"
-    cloud_template_vmid: "{{ hostvars['localhost']['cloud_template_vmid'] }}"
-    vms: "{{ hostvars['localhost']['vms'] }}"
-    network: "{{ hostvars['localhost']['network'] }}"
-    ssh_public_key: "{{ hostvars['localhost']['ssh_public_key'] }}"
-
 - import_playbook: provision/wait_for_ssh.yml
-  vars:
-    vms: "{{ hostvars['localhost']['vms'] }}"
-
 - import_playbook: provision/update_dns.yml
-  vars:
-    vms: "{{ hostvars['localhost']['vms'] }}"
-
 - import_playbook: provision/install_agent.yml
-  vars:
-    proxmox_host: "{{ hostvars['localhost']['proxmox_host'] }}"
-    proxmox_user: "{{ hostvars['localhost']['proxmox_user'] }}"
-    proxmox_password: "{{ hostvars['localhost']['proxmox_password'] }}"
-    proxmox_api_token_id: "{{ hostvars['localhost']['proxmox_api_token_id'] }}"
-    proxmox_api_token_secret: "{{ hostvars['localhost']['proxmox_api_token_secret'] }}"
-    vms: "{{ hostvars['localhost']['vms'] }}"
-
 - import_playbook: provision/build_inventory.yml
-  vars:
-    vms: "{{ hostvars['localhost']['vms'] }}"
-
