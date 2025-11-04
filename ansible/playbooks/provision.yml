@@ -1,6 +1,8 @@
 - name: Deploy Esports LAN Infrastructure
   hosts: localhost
-  gather_facts: false
+  gather_facts: true
+  remote_user: ansible
+  become: true   # to elevate when needed
 
   vars_files:
     - ../config.yaml  # root-level config
@@ -53,5 +55,11 @@
 - import_playbook: provision/clone_vms.yml
 - import_playbook: provision/wait_for_ssh.yml
 - import_playbook: provision/update_dns.yml
+  vars:
+    ansible_user: ansible
 - import_playbook: provision/install_agent.yml
+  vars:
+    ansible_user: ansible
 - import_playbook: provision/build_inventory.yml
+  vars:
+    ansible_user: ansible
