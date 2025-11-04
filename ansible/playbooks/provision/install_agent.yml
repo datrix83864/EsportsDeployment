@@ -1,6 +1,18 @@
-- name: Install and start QEMU guest agent if not running
-  shell: |
-    ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }} "sudo apt-get update && sudo apt-get install -y qemu-guest-agent && sudo systemctl enable --now qemu-guest-agent"
-  loop: "{{ vms }}"
-  when: ssh_check is succeeded
-  ignore_errors: true
+- name: QEMU Guest Agent Installation
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Check SSH connectivity to VMs
+      shell: |
+        ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }} "echo connected"
+      register: ssh_check
+      loop: "{{ vms }}"
+      ignore_errors: true
+
+    - name: Install and start QEMU guest agent if not running
+      shell: |
+        ssh -o StrictHostKeyChecking=no ansible@{{ item.ip }} "sudo apt-get update && sudo apt-get install -y qemu-guest-agent && sudo systemctl enable --now qemu-guest-agent"
+      loop: "{{ vms }}"
+      when: ssh_check is succeeded
+      ignore_errors: true

@@ -1,39 +1,43 @@
-# Clean up old SSH keys (prevents "host key changed" errors)
-- name: Remove old SSH host keys for all VMs
-  command: ssh-keygen -f "/root/.ssh/known_hosts" -R "{{ item.ip }}"
-  loop: "{{ vms }}"
-  delegate_to: localhost
-  changed_when: false
-  failed_when: false
-  tags: [ssh, cleanup]
+- name: Wait for SSH access to all VMs
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+  - name: Remove old SSH host keys for all VMs
+    command: ssh-keygen -f "/root/.ssh/known_hosts" -R "{{ item.ip }}"
+    loop: "{{ vms }}"
+    delegate_to: localhost
+    changed_when: false
+    failed_when: false
+    tags: [ssh, cleanup]
 
-# Wait for SSH to be ready
-- name: Wait for SSH to become available
-  wait_for:
-    host: "{{ item.ip }}"
-    port: 22
-    delay: 10
-    timeout: 300
-    state: started
-  loop: "{{ vms }}"
-  delegate_to: localhost
-  tags: [ssh, verify]
+  # Wait for SSH to be ready
+  - name: Wait for SSH to become available
+    wait_for:
+      host: "{{ item.ip }}"
+      port: 22
+      delay: 10
+      timeout: 300
+      state: started
+    loop: "{{ vms }}"
+    delegate_to: localhost
+    tags: [ssh, verify]
 
-- name: Verify SSH connectivity (with retries)
-  delegate_to: localhost
-  vars:
-    ssh_opts: "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts -o ConnectTimeout=10"
-  block:
-    - name: Attempt SSH connection
-      shell: >
-        ssh {{ ssh_opts }} ansible@{{ item.ip }} "echo Connected to {{ item.name }}"
-      register: ssh_check
-      retries: 10
-      delay: 15
-      until: ssh_check.rc == 0
-      loop: "{{ vms }}"
-      ignore_errors: true
+  - name: Verify SSH connectivity (with retries)
+    delegate_to: localhost
+    vars:
+      ssh_opts: "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/root/.ssh/known_hosts -o ConnectTimeout=10"
+    block:
+      - name: Attempt SSH connection
+        shell: >
+          ssh {{ ssh_opts }} ansible@{{ item.ip }} "echo Connected to {{ item.name }}"
+        register: ssh_check
+        retries: 10
+        delay: 15
+        until: ssh_check.rc == 0
+        loop: "{{ vms }}"
+        ignore_errors: true
 
-- name: Show SSH connection results
-  debug:
-    msg: "{{ ssh_check.results | map(attribute='stdout') | list }}"
+  - name: Show SSH connection results
+    debug:
+      msg: "{{ ssh_check.results | map(attribute='stdout') | list }}"
