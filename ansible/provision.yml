@@ -114,12 +114,11 @@
     
     # Phase 1: Create VMs with proper cloud-init configuration
     - name: Clone VMs from template
-      delegate_to: "{{ proxmox_host }}"
-      shell: |
-        qm clone {{ cloud_template_vmid }} {{ item.vmid }} --name {{ item.name }} --full
+      shell: qm clone {{ cloud_template_vmid }} {{ item.vmid }} --name {{ item.name }} --full
+      args:
+        creates: "/etc/pve/qemu-server/{{ item.vmid }}.conf"
       loop: "{{ vms }}"
-      register: clone_result
-      failed_when: false
+
 
     - name: Configure VM resources and cloud-init
       delegate_to: "{{ proxmox_host }}"
@@ -229,11 +228,24 @@
       ignore_errors: true
     
     - name: Build dynamic inventory for next plays
-      add_host:
-        name: "{{ item.ip }}"
-        groups: "{{ item.role }}"
-        ansible_user: ansible
-        ansible_become: yes
-        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-      loop: "{{ vms }}"
-      changed_when: false
+  copy:
+    dest: inventory/generated_hosts.yml
+    content: |
+      all:
+        hosts:
+          {% for vm in vms %}
+          {{ vm.ip }}:
+            ansible_user: ansible
+            ansible_become: yes
+            ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          {% endfor %}
+        children:
+          pxe:
+            hosts:
+              {{ network.pxe_server }}:
+          lancache:
+            hosts:
+              {{ network.lancache_server }}:
+          fileserver:
+            hosts:
+              {{ network.file_server }}:
