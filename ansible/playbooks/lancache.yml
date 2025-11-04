@@ -1,0 +1,452 @@
+---
+# LANCache Server Deployment Playbook
+# High School Esports LAN Infrastructure
+# Deploys LANCache using Docker containers for game content caching
+
+- name: Deploy LANCache Server
+  hosts: lancache_server
+  become: true
+  gather_facts: true
+  
+  vars:
+    lancache_ip: "{{ config.network.lancache_server_ip }}"
+    lancache_cache_root: "/srv/lancache/data"
+    lancache_logs_root: "/srv/lancache/logs"
+    lancache_compose_dir: "/opt/lancache"
+    
+  tasks:
+    - name: Display deployment information
+      debug:
+        msg:
+          - "Deploying LANCache Server"
+          - "Server IP: {{ lancache_ip }}"
+          - "Cache Storage: {{ lancache_cache_root }}"
+          - "Organization: {{ config.organization.name }}"
+    
+    # =========================================================================
+    # System Preparation
+    # =========================================================================
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [packages, setup]
+    
+    - name: Install system dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - python3-pip
+          - python3-setuptools
+        state: present
+      tags: [packages, setup]
+    
+    # =========================================================================
+    # Docker Installation
+    # =========================================================================
+    - name: Check if Docker is already installed
+      command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+      tags: [docker, setup]
+    
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: docker_check.rc != 0
+      tags: [docker, setup]
+    
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: docker_check.rc != 0
+      tags: [docker, setup]
+    
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: yes
+      when: docker_check.rc != 0
+      tags: [docker, setup]
+    
+    - name: Install Docker Compose
+      pip:
+        name: docker-compose
+        state: present
+      tags: [docker, setup]
+    
+    - name: Ensure Docker service is enabled and started
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+      tags: [docker, setup]
+    
+    # =========================================================================
+    # Directory Structure
+    # =========================================================================
+    - name: Create LANCache directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      loop:
+        - "{{ lancache_compose_dir }}"
+        - "{{ lancache_cache_root }}"
+        - "{{ lancache_logs_root }}"
+      tags: [directories, setup]
+    
+    - name: Set permissions on cache directory
+      file:
+        path: "{{ lancache_cache_root }}"
+        state: directory
+        mode: '0777'
+        owner: nobody
+        group: nogroup
+        recurse: no
+      tags: [directories, setup]
+    
+    # =========================================================================
+    # LANCache Configuration
+    # =========================================================================
+    - name: Create LANCache DNS environment file
+      copy:
+        dest: "{{ lancache_compose_dir }}/lancache-dns.env"
+        content: |
+          # LANCache DNS Configuration
+          UPSTREAM_DNS={{ config.network.dns_primary | default('8.8.8.8') }} {{ config.network.dns_secondary | default('8.8.4.4') }}
+          LANCACHE_IP={{ lancache_ip }}
+          USE_GENERIC_CACHE=true
+          DISABLE_STEAM={{ 'false' if config.games.clients.steam.enabled | default(true) else 'true' }}
+          DISABLE_EPICGAMES={{ 'false' if config.games.clients.epic_games.enabled | default(true) else 'true' }}
+          DISABLE_RIOT={{ 'false' if config.games.clients.riot_client.enabled | default(true) else 'true' }}
+          DISABLE_BLIZZARD={{ 'false' if config.games.clients.battle_net.enabled | default(false) else 'true' }}
+          DISABLE_ORIGIN=false
+          DISABLE_UPLAY=false
+          DISABLE_WINDOWSUPDATES=false
+        mode: '0644'
+      tags: [config, lancache]
+    
+    - name: Create LANCache cache environment file
+      copy:
+        dest: "{{ lancache_compose_dir }}/lancache.env"
+        content: |
+          # LANCache Cache Configuration
+          CACHE_ROOT={{ lancache_cache_root }}
+          CACHE_LOGS_ROOT={{ lancache_logs_root }}
+          CACHE_DISK_SIZE={{ config.vms.lancache_server.cache_disk_size | default(30000) }}g
+          CACHE_MAX_AGE=3650d
+          CACHE_SLICE_SIZE=1m
+          NGINX_WORKER_PROCESSES={{ config.vms.lancache_server.cores | default(4) }}
+          UPSTREAM_DNS={{ config.network.dns_primary | default('8.8.8.8') }} {{ config.network.dns_secondary | default('8.8.4.4') }}
+          BIND_IP=0.0.0.0
+          ACCESS_LOG_ENABLED=true
+          CACHE_INDEX_SIZE=500m
+          TZ={{ ansible_date_time.tz | default('America/New_York') }}
+        mode: '0644'
+      tags: [config, lancache]
+    
+    - name: Create Docker Compose file
+      copy:
+        dest: "{{ lancache_compose_dir }}/docker-compose.yml"
+        content: |
+          version: '3.9'
+          
+          services:
+            lancache-dns:
+              image: lancachenet/lancache-dns:latest
+              container_name: lancache-dns
+              restart: unless-stopped
+              env_file:
+                - lancache-dns.env
+              ports:
+                - "53:53/udp"
+                - "53:53/tcp"
+              networks:
+                - lancache
+              logging:
+                driver: "json-file"
+                options:
+                  max-size: "10m"
+                  max-file: "3"
+          
+            lancache:
+              image: lancachenet/monolithic:latest
+              container_name: lancache
+              restart: unless-stopped
+              env_file:
+                - lancache.env
+              ports:
+                - "80:80/tcp"
+                - "443:443/tcp"
+              networks:
+                - lancache
+              volumes:
+                - {{ lancache_cache_root }}:/data/cache
+                - {{ lancache_logs_root }}:/data/logs
+              logging:
+                driver: "json-file"
+                options:
+                  max-size: "50m"
+                  max-file: "5"
+          
+            sniproxy:
+              image: lancachenet/sniproxy:latest
+              container_name: sniproxy
+              restart: unless-stopped
+              ports:
+                - "443:443/tcp"
+              networks:
+                - lancache
+              logging:
+                driver: "json-file"
+                options:
+                  max-size: "10m"
+                  max-file: "3"
+          
+          networks:
+            lancache:
+              driver: bridge
+        mode: '0644'
+      tags: [config, lancache]
+    
+    # =========================================================================
+    # Utility Scripts
+    # =========================================================================
+    - name: Install lancache-status script
+      copy:
+        dest: /usr/local/bin/lancache-status
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "LANCache Server Status"
+          echo "======================"
+          echo
+          echo "Docker Containers:"
+          docker ps --filter "name=lancache" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          echo
+          echo "Cache Storage:"
+          df -h {{ lancache_cache_root }} | tail -1
+          echo
+          echo "Cache Size:"
+          du -sh {{ lancache_cache_root }} 2>/dev/null || echo "Calculating..."
+          echo
+          echo "Active Connections:"
+          ss -tn | grep :80 | wc -l
+      tags: [scripts, utilities]
+    
+    - name: Install lancache-monitor script
+      copy:
+        dest: /usr/local/bin/lancache-monitor
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "LANCache Live Monitor"
+          echo "===================="
+          echo "Press Ctrl+C to exit"
+          echo
+          docker logs -f lancache --tail=50
+      tags: [scripts, utilities]
+    
+    - name: Install lancache-logs script
+      copy:
+        dest: /usr/local/bin/lancache-logs
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "LANCache Logs"
+          echo "============="
+          echo
+          echo "Recent activity (last 100 lines):"
+          docker logs lancache --tail=100
+          echo
+          echo "Live logs (Ctrl+C to exit):"
+          docker logs -f lancache
+      tags: [scripts, utilities]
+    
+    - name: Install lancache-restart script
+      copy:
+        dest: /usr/local/bin/lancache-restart
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          echo "Restarting LANCache containers..."
+          cd {{ lancache_compose_dir }}
+          docker-compose restart
+          echo "Done!"
+          echo
+          lancache-status
+      tags: [scripts, utilities]
+    
+    # =========================================================================
+    # Firewall Configuration
+    # =========================================================================
+    - name: Configure UFW firewall rules
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+        comment: "{{ item.comment }}"
+      loop:
+        - { port: '53', proto: 'udp', comment: 'LANCache DNS' }
+        - { port: '53', proto: 'tcp', comment: 'LANCache DNS' }
+        - { port: '80', proto: 'tcp', comment: 'LANCache HTTP' }
+        - { port: '443', proto: 'tcp', comment: 'LANCache HTTPS' }
+      when: ansible_facts['os_family'] == "Debian"
+      tags: [firewall, security]
+      ignore_errors: true
+    
+    # =========================================================================
+    # Start LANCache
+    # =========================================================================
+    - name: Pull LANCache Docker images
+      community.docker.docker_compose:
+        project_src: "{{ lancache_compose_dir }}"
+        pull: yes
+      tags: [docker, deploy]
+    
+    - name: Start LANCache containers
+      community.docker.docker_compose:
+        project_src: "{{ lancache_compose_dir }}"
+        state: present
+      tags: [docker, deploy]
+    
+    - name: Wait for LANCache to be ready
+      wait_for:
+        port: 80
+        timeout: 60
+      tags: [verify, deploy]
+    
+    - name: Wait for DNS to be ready
+      wait_for:
+        port: 53
+        timeout: 60
+      tags: [verify, deploy]
+    
+    # =========================================================================
+    # Verification
+    # =========================================================================
+    - name: Test LANCache HTTP endpoint
+      uri:
+        url: "http://localhost/"
+        status_code: [200, 204, 404]
+        timeout: 10
+      register: http_check
+      retries: 3
+      delay: 5
+      tags: [verify]
+    
+    - name: Get container status
+      command: docker ps --filter "name=lancache" --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: container_status
+      changed_when: false
+      tags: [verify]
+    
+    - name: Verify all containers are running
+      assert:
+        that:
+          - "'lancache-dns' in container_status.stdout"
+          - "'lancache' in container_status.stdout"
+          - "'sniproxy' in container_status.stdout"
+        fail_msg: "Not all LANCache containers are running"
+        success_msg: "All LANCache containers are running"
+      tags: [verify]
+    
+    # =========================================================================
+    # Create Deployment Report
+    # =========================================================================
+    - name: Create deployment report
+      copy:
+        dest: /root/lancache-deployment-report.txt
+        content: |
+          LANCache Deployment Report
+          ==========================
+          Date: {{ ansible_date_time.iso8601 }}
+          Organization: {{ config.organization.name }}
+          Server IP: {{ lancache_ip }}
+          
+          Configuration:
+          - Cache Storage: {{ lancache_cache_root }}
+          - Cache Size Limit: {{ config.vms.lancache_server.cache_disk_size | default(30000) }}GB
+          - Worker Processes: {{ config.vms.lancache_server.cores | default(4) }}
+          - Upstream DNS: {{ config.network.dns_primary | default('8.8.8.8') }} {{ config.network.dns_secondary | default('8.8.4.4') }}
+          
+          Enabled Platforms:
+          - Steam: {{ 'Yes' if config.games.clients.steam.enabled | default(true) else 'No' }}
+          - Epic Games: {{ 'Yes' if config.games.clients.epic_games.enabled | default(true) else 'No' }}
+          - Riot Games: {{ 'Yes' if config.games.clients.riot_client.enabled | default(true) else 'No' }}
+          - Battle.net: {{ 'Yes' if config.games.clients.battle_net.enabled | default(false) else 'No' }}
+          - Windows Updates: Yes
+          
+          Docker Containers:
+          - lancache-dns: Port 53 (DNS)
+          - lancache: Ports 80/443 (Cache)
+          - sniproxy: Port 443 (SNI proxy)
+          
+          Management Commands:
+          - lancache-status    : Show current status
+          - lancache-monitor   : Live log monitoring
+          - lancache-logs      : View recent logs
+          - lancache-restart   : Restart all containers
+          
+          Next Steps:
+          1. Configure DHCP to use this server as DNS ({{ lancache_ip }})
+          2. Update config.yaml: network.dns_primary = "{{ lancache_ip }}"
+          3. Redeploy iPXE server with updated DNS
+          4. Test with a client machine:
+             - nslookup steamcdn.com {{ lancache_ip }}
+             - Should return {{ lancache_ip }}
+          5. Download a game to populate cache
+          6. Monitor with: lancache-monitor
+          
+          Monitoring:
+          - Cache stats: docker stats lancache
+          - Live logs: lancache-monitor
+          - Connection count: ss -tn | grep :80 | wc -l
+          - Cache size: du -sh {{ lancache_cache_root }}
+          
+          Troubleshooting:
+          - View logs: lancache-logs
+          - Check DNS: nslookup steamcdn.com {{ lancache_ip }}
+          - Test HTTP: curl -I http://{{ lancache_ip }}
+          - Restart: lancache-restart
+        mode: '0644'
+      tags: [report]
+    
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "=========================================="
+          - "LANCache Deployed Successfully!"
+          - "=========================================="
+          - ""
+          - "Server IP: {{ lancache_ip }}"
+          - "Cache Storage: {{ lancache_cache_root }}"
+          - "Cache Limit: {{ config.vms.lancache_server.cache_disk_size | default(30000) }}GB"
+          - ""
+          - "Management Commands:"
+          - "  lancache-status    - Show status"
+          - "  lancache-monitor   - Live monitoring"
+          - "  lancache-logs      - View logs"
+          - "  lancache-restart   - Restart containers"
+          - ""
+          - "Next Steps:"
+          - "  1. Configure DHCP to use {{ lancache_ip }} as DNS"
+          - "  2. Test DNS: nslookup steamcdn.com {{ lancache_ip }}"
+          - "  3. Download a game to test caching"
+          - ""
+          - "Report saved: /root/lancache-deployment-report.txt"
+      tags: [report]
