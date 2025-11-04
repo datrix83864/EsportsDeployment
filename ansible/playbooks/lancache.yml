@@ -5,6 +5,7 @@
 
 - name: Deploy LANCache Server
   hosts: lancache-server
+  remote_user: ansible
   become: true
   gather_facts: true
   
