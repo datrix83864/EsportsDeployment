@@ -14,47 +14,47 @@
         msg: "SSH key found: {{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
   tasks:
     - set_fact:
-      proxmox_host: "{{ proxmox.host }}"
-      proxmox_user: "{{ proxmox.user | default('root@pam') }}"
-      proxmox_password: "{{ proxmox.password | default('') }}"
-      proxmox_api_token_id: "{{ proxmox.api_token_id | default('') }}"
-      proxmox_api_token_secret: "{{ proxmox.api_token_secret | default('') }}"
-      proxmox_node: "{{ proxmox.node }}"
-      proxmox_storage: "{{ proxmox.storage }}"
-      cloud_template_name: "ubuntu-cloud"
-      cloud_template_vmid: 105
-      cloud_image_url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
-      cloud_image_path: /tmp/jammy-server-cloudimg-amd64.img
-      network: "{{ network }}"
-      ssh_public_key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_rsa.pub') }}"
-      
-      # VM definitions
-      vms:
-        - name: pxe-server
-          vmid: 100
-          ip: "{{ network.pxe_server }}"
-          memory: "{{ resources.pxe_server.memory }}"
-          cores: "{{ resources.pxe_server.cores }}"
-          disk: "{{ resources.pxe_server.disk }}"
-          role: pxe
-          
-        - name: lancache-server
-          vmid: 101
-          ip: "{{ network.lancache_server }}"
-          memory: "{{ resources.lancache_server.memory }}"
-          cores: "{{ resources.lancache_server.cores }}"
-          disk: "{{ resources.lancache_server.disk }}"
-          extra_disk: "{{ resources.lancache_server.cache_disk }}"
-          role: lancache
-          
-        - name: file-server
-          vmid: 102
-          ip: "{{ network.file_server }}"
-          memory: "{{ resources.file_server.memory }}"
-          cores: "{{ resources.file_server.cores }}"
-          disk: "{{ resources.file_server.disk }}"
-          extra_disk: "{{ resources.file_server.data_disk }}"
-          role: fileserver
+        proxmox_host: "{{ proxmox.host }}"
+        proxmox_user: "{{ proxmox.user | default('root@pam') }}"
+        proxmox_password: "{{ proxmox.password | default('') }}"
+        proxmox_api_token_id: "{{ proxmox.api_token_id | default('') }}"
+        proxmox_api_token_secret: "{{ proxmox.api_token_secret | default('') }}"
+        proxmox_node: "{{ proxmox.node }}"
+        proxmox_storage: "{{ proxmox.storage }}"
+        cloud_template_name: "ubuntu-cloud"
+        cloud_template_vmid: 105
+        cloud_image_url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+        cloud_image_path: /tmp/jammy-server-cloudimg-amd64.img
+        network: "{{ network }}"
+        ssh_public_key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_rsa.pub') }}"
+        
+        # VM definitions
+        vms:
+          - name: pxe-server
+            vmid: 100
+            ip: "{{ network.pxe_server }}"
+            memory: "{{ resources.pxe_server.memory }}"
+            cores: "{{ resources.pxe_server.cores }}"
+            disk: "{{ resources.pxe_server.disk }}"
+            role: pxe
+            
+          - name: lancache-server
+            vmid: 101
+            ip: "{{ network.lancache_server }}"
+            memory: "{{ resources.lancache_server.memory }}"
+            cores: "{{ resources.lancache_server.cores }}"
+            disk: "{{ resources.lancache_server.disk }}"
+            extra_disk: "{{ resources.lancache_server.cache_disk }}"
+            role: lancache
+            
+          - name: file-server
+            vmid: 102
+            ip: "{{ network.file_server }}"
+            memory: "{{ resources.file_server.memory }}"
+            cores: "{{ resources.file_server.cores }}"
+            disk: "{{ resources.file_server.disk }}"
+            extra_disk: "{{ resources.file_server.data_disk }}"
+            role: fileserver
 
 
 - import_playbook: provision/display_deployment_info.yml
