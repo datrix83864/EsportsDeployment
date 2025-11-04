@@ -313,13 +313,13 @@
     # Start LANCache
     # =========================================================================
     - name: Pull LANCache Docker images
-      community.docker.docker_compose:
+      community.docker.docker_compose_v2:
         project_src: "{{ lancache_compose_dir }}"
         pull: yes
       tags: [docker, deploy]
     
     - name: Start LANCache containers
-      community.docker.docker_compose:
+      community.docker.docker_compose_v2:
         project_src: "{{ lancache_compose_dir }}"
         state: present
       tags: [docker, deploy]
