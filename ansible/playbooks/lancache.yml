@@ -4,7 +4,7 @@
 # Deploys LANCache using Docker containers for game content caching
 
 - name: Deploy LANCache Server
-  hosts: lancache_server
+  hosts: lancache-server
   become: true
   gather_facts: true
   
