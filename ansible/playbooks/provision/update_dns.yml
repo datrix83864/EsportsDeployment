@@ -1,5 +1,5 @@
 - name: Ensure proper DNS configuration on all provisioned VMs
-  hosts: all   # use the dynamic inventory groups created earlier
+  hosts: "{{ vms | map(attribute='name') | list }}"
   become: true
   gather_facts: true
 
@@ -13,16 +13,20 @@
       lineinfile:
         path: /etc/netplan/00-cloud-init.yaml
         regexp: 'nameservers:'
-        line: '        nameservers: { addresses: [8.8.8.8, 8.8.4.4] }'
+        line: "        nameservers: { addresses: [8.8.8.8, 8.8.4.4] }"
       when: netplan_file.stat.exists
 
     - name: Apply netplan
       command: netplan apply
+      when: netplan_file.stat.exists
 
     - name: Test DNS resolution
       command: ping -c 1 google.com
       register: ping_test
-      ignore_errors: true
+      retries: 5
+      delay: 5
+      until: ping_test.rc == 0
+      ignore_errors: yes
 
     - name: Display DNS test result
       debug:
