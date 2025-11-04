@@ -1,8 +1,6 @@
 - name: Deploy Esports LAN Infrastructure
   hosts: localhost
   gather_facts: false
-  remote_user: ansible
-  become: true   # to elevate when needed
 
   vars_files:
     - ../config.yaml
@@ -27,7 +25,7 @@
         cloud_image_path: /tmp/jammy-server-cloudimg-amd64.img
         ssh_public_key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
 
-
+        # VM definitions (can also be pulled from config.yaml)
         vms:
           - name: pxe-server
             vmid: 100
